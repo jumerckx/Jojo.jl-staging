@@ -1,4 +1,6 @@
-using InteractiveUtils
+using InteractiveUtils, CassetteOverlay
+using MLIR: IR, API
+
 macro code_ircode(ex0...)
     thecall = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(@__MODULE__, :(Base.code_ircode), ex0)
     quote
@@ -6,8 +8,6 @@ macro code_ircode(ex0...)
         length(results) == 1 ? results[1] : results
     end
 end
-
-using MLIR: IR, API
 
 function registerAllDialects!()
     ctx = IR.context()
@@ -100,7 +100,6 @@ function lowerModuleToNVVM(mod::IR.MModule)
     return mod
 end
   
-
 function jit(mod::IR.MModule; opt=0)
     paths = Base.unsafe_convert.(Ref(API.MlirStringRef), [MLIR.API.mlir_c_runner_utils, MLIR.API.mlir_runner_utils])
     jit = API.mlirExecutionEngineCreate(
@@ -116,4 +115,30 @@ function jit(mod::IR.MModule; opt=0)
         return addr
     end
     return lookup
+end
+
+cb = IR.Block() # Fixed block for demonstration purposes.
+IR.lose_ownership!(cb)
+currentblock() = cb
+
+@MethodTable MLIRCompilation
+@overlay MLIRCompilation function IR.create_operation(
+        name, loc;
+        results=nothing,
+        operands=nothing,
+        owned_regions=nothing,
+        successors=nothing,
+        attributes=nothing,
+        result_inference=isnothing(results))
+    @info "Overlayed!!!"
+    op = @nonoverlay IR.create_operation(
+        name, loc;
+        results,
+        operands,
+        owned_regions,
+        successors,
+        attributes,
+        result_inference)
+    push!(currentblock(), op)
+    return op
 end

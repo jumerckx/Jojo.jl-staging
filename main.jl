@@ -13,7 +13,7 @@ new_intrinsic = () -> Base.compilerbarrier(:const, error("Intrinsics should be c
 using MacroTools
 using CassetteOverlay
 # @MethodTable MLIRCompilation
-MLIRCompilation = MLIR.Dialects.MLIRCompilation
+# MLIRCompilation = MLIR.Dialects.MLIRCompilation
 mlircompilationpass = @overlaypass MLIRCompilation;
 
 
@@ -60,88 +60,6 @@ macro mlirfunction(f)
     mlirfunction_(f)
 end
 
-
-# function mlirop_(expr)
-#     dict = splitdef(expr)
-#     rtype = get(dict, :rtype, :Any)
-
-#     modified = :($(dict[:name])($(dict[:args]...); $(dict[:kwargs]...)))
-#     modified = nonoverlay(modified)
-#     @info modified
-#     modified = :(
-#         function $(dict[:name])($(dict[:args]...); $(dict[:kwargs]...))::$rtype where {$(dict[:whereparams]...)}
-#             $modified
-#             println("overlayed!!!!")
-#             push!(currentblock(), op)
-#         end
-#     )
-
-#     modified = overlay_def!(:MLIRCompilation, modified)
-#     return quote
-#         $(expr)
-#         $modified
-#     end |> esc
-# end
-
-# macro mlirop(f)
-#     f = macroexpand(__module__, f)
-#     Base.is_function_def(f) || error("@mlirop requires a function definition")
-#     mlirop_(f)
-# end
-
-# (@macroexpand @mlirop function addi(lhs::Value, rhs::Value; result=nothing::Union{Nothing, MLIRType}, location=Location())
-#     results = MLIRType[]
-#     operands = Value[lhs, rhs, ]
-#     owned_regions = Region[]
-#     successors = Block[]
-#     attributes = NamedAttribute[]
-#     (result != nothing) && push!(results, result)
-    
-#     create_operation(
-#         "arith.addi", location;
-#         operands, owned_regions, successors, attributes,
-#         results=(length(results) == 0 ? nothing : results),
-#         result_inference=(length(results) == 0 ? true : false)
-#     )
-# end) |> prettify
-
-# @mlirop function arith.addi(lhs::Value, rhs::Value; result=nothing::Union{Nothing, MLIRType}, location=Location())
-#     results = MLIRType[]
-#     operands = Value[lhs, rhs, ]
-#     owned_regions = Region[]
-#     successors = Block[]
-#     attributes = NamedAttribute[]
-#     (result != nothing) && push!(results, result)
-    
-#     create_operation(
-#         "arith.addi", location;
-#         operands, owned_regions, successors, attributes,
-#         results=(length(results) == 0 ? nothing : results),
-#         result_inference=(length(results) == 0 ? true : false)
-#     )
-# end
-
-# Each function to generate an operation has an additional version with the
-# same name in the MLIRCompilation context that will also push the created
-# operation to the current block.
-# @overlay MLIRCompilation function MLIR.Dialects.arith.addi(
-#     lhs::Value,
-#     rhs::Value;
-#     result=nothing::Union{Nothing, MLIRType},
-#     location=Location())
-#     println("overlayed!")
-#     op = @nonoverlay MLIR.Dialects.arith.addi(
-#         lhs::Value,
-#         rhs::Value;
-#         result=nothing::Union{Nothing, MLIRType},
-#         location=Location())
-#     push!(current_block, op)
-#     return op
-# end
-
-current_block = IR.Block() # Fixed block for demonstration purposes.
-
-
 #= 
 User code
 =#
@@ -171,6 +89,7 @@ Following code is called behind-the-scene, in Brutus.code_mlir
 =#
 # dummy arguments, in Brutus.code_mlir, this will be the actual function arguments/ssa values:
 placeholder = IR.Block()
+IR.lose_ownership!(placeholder)
 a = MyNumber(MLIR.IR.push_argument!(placeholder, IR.MLIRType(Int), IR.Location()))
 b = MyNumber(MLIR.IR.push_argument!(placeholder, IR.MLIRType(Int), IR.Location()))
 c = MLIR.IR.push_argument!(placeholder, parse(IR.MLIRType, "!shape<shape>"), IR.Location())
@@ -180,3 +99,18 @@ c = MLIR.IR.push_argument!(placeholder, parse(IR.MLIRType, "!shape<shape>"), IR.
 op = mlircompilationpass((a, b)) do (a, b)
     Base.:+(a, b)
 end # MyNumber(%0 = arith.addi <<UNKNOWN SSA VALUE>>, <<UNKNOWN SSA VALUE>> : i64)
+@info op
+
+using CassetteOverlay
+
+@MethodTable TestTable
+
+testpass = @overlaypass TestTable
+
+@overlay TestTable Base.add_int(x::Int, y::Int) = 1
+
+@code_typed 1+1
+
+testpass(1) do a
+    a+a
+end
