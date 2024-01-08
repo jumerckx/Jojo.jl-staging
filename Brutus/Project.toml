@@ -1,0 +1,9 @@
+name = "Brutus"
+uuid = "10db2648-50ef-49bd-9477-c1b55d74eda0"
+authors = ["jumerckx "]
+version = "0.1.0"
+
+[deps]
+CassetteOverlay = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
+MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
+MLIR = "bfde9dd4-8f40-4a1e-be09-1475335e1c92"

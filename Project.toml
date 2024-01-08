@@ -1,4 +1,5 @@
 [deps]
+Brutus = "10db2648-50ef-49bd-9477-c1b55d74eda0"
 CassetteOverlay = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
 MLIR = "bfde9dd4-8f40-4a1e-be09-1475335e1c92"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
