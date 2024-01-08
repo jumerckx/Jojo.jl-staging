@@ -114,3 +114,32 @@ testpass = @overlaypass TestTable
 testpass(1) do a
     a+a
 end
+
+
+g(a)::Nothing = new_intrinsic()
+@MethodTable MyMethodTable
+@overlay MyMethodTable g(a) = a+1
+mypass = @overlaypass MyMethodTable
+
+f(a) = g(a*2)
+
+f(1)
+
+(ir, ret) = only(Base.code_ircode(f, [Int]))
+
+ir.stmts.inst[2].args[2](1)
+
+called_func = ir.stmts.inst[2].args[2]
+
+getintrinsic(gr::GlobalRef) = Core.Compiler.abstract_eval_globalref(gr)
+getintrinsic(inst::Expr) = getintrinsic(inst.args[2])
+getintrinsic(mod::Module, name::Symbol) = getintrinsic(GlobalRef(mod, name))
+
+b = getintrinsic(ir.stmts.inst[2])
+
+mypass() do 
+    getproperty(called_func.mod, called_func.name)(1)
+    b.val(1)
+end
+
+
