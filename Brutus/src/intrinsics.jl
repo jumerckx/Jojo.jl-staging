@@ -1,28 +1,5 @@
 new_intrinsic = ()->Base.compilerbarrier(:const, error("Intrinsics should be compiled to MLIR!"))
 
-struct MLIRIndex <: Integer
-    i::Int
-end
-IR.MLIRType(::Type{MLIRIndex}) = IR.IndexType()
-
-@noinline mlir_indexadd(a::Integer, b::Integer) = new_intrinsic()::MLIRIndex
-@noinline mlir_indexsub(a::Integer, b::Integer) = new_intrinsic()::MLIRIndex
-@noinline mlir_indexmul(a::Integer, b::Integer) = new_intrinsic()::MLIRIndex
-@noinline mlir_indexdiv(a::Integer, b::Integer) = new_intrinsic()::MLIRIndex
-
-import Base: +, -, *, //
-for (f, intrinsic) in [
-        (:+, Brutus.mlir_indexadd),
-        (:-, Brutus.mlir_indexsub),
-        (:*, Brutus.mlir_indexmul),
-        (://, Brutus.mlir_indexdiv) # TODO: not sure about this one
-    ]
-    @eval begin
-        $f(a::MLIRIndex, b::Integer) = $intrinsic(a, b)
-        $f(a::Integer, b::MLIRIndex) = $intrinsic(a, b)
-    end
-end
-
 @noinline begin_for(start::Integer, stop::Integer) =  new_intrinsic()::Int
 @noinline begin_for(result::T, start::Integer, stop::Integer) where T = new_intrinsic()::Tuple{Int, T}
 

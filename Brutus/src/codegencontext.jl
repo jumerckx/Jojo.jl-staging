@@ -74,9 +74,9 @@ function get_value(cg::CodegenContext, x)
         # return IR.get_argument(cg.entryblock, x.n - 1)
     elseif x isa BrutusType
         if x isa Int
-            return IR.get_result(push!(currentblock(cg), arith.constant(x, IR.IndexType())))
+            return IR.get_result(push!(currentblock(cg), index.constant(value=Attribute(x, IR.IndexType()))))
         else
-            return IR.get_result(push!(currentblock(cg), arith.constant(x)))
+            return IR.get_result(push!(currentblock(cg), arith.constant(value=x)))
         end            
     elseif (x isa Type) && (x <: BrutusType)
         return IR.MLIRType(x)

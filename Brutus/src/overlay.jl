@@ -55,8 +55,6 @@ function mlirfunction_(expr)
     expr = overlay_def!(methodtable, combinedef(dict))
 
     return quote
-        # TODO: is this allowed? Maybe the gensym'd name can collide with a method in the caller's module?
-        # https://discourse.julialang.org/t/can-i-unescape-a-variable-name-within-an-esc-node/102396/7
         $(esc(methodtable)) = MLIRCompilation
 
         function $(esc(dict[:name]))($(esc.(dict[:args])...); $(esc.(dict[:kwargs])...))::$(esc(rtype)) where {$(esc.(dict[:whereparams])...)}
