@@ -214,7 +214,7 @@ This only supports a few Julia Core primitives and scalar types of type $BrutusT
     handful of primitives. A better to perform this conversion would to create a dialect
     representing Julia IR and progressively lower it to base MLIR dialects.
 """
-function code_mlir(f, types; do_simplify=true)
+function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns=false)
     ctx = context()
     ir, ret = Core.Compiler.code_ircode(f, types) |> only
     @assert first(ir.argtypes) isa Core.Const
@@ -230,215 +230,189 @@ function code_mlir(f, types; do_simplify=true)
         for bb in ir.cfg.blocks
     ]
 
-    cg = CodegenContext(
-        [Region()],
-        [],
+    CodegenContext(;
+        regions=[Region()],
+        loop_thunks=[],
         blocks,
-        blocks[begin],
-        1,
+        entryblock=blocks[begin],
+        currentblockindex=1,
         ir,
         ret,
         values,
         args
-    )
+    ) do cg
+        for (i, argtype) in enumerate(types.parameters)
+            arg = IR.push_argument!(cg.entryblock, MLIRType(argtype), Location())
+            cg.args[i] = argtype(arg) # Note that Core.Argument(index) ends up at index-1 in this array. We handle this in get_value.
+            println("argument: $argtype => $(MLIRType(argtype))")
+        end
 
-    for (i, argtype) in enumerate(types.parameters)
-        arg = IR.push_argument!(cg.entryblock, MLIRType(argtype), Location())
+        for (block_id, bb) in enumerate(cg.ir.cfg.blocks)
+            cg.currentblockindex = block_id
+            @info "number of regions: $(length(cg.regions))"
+            @show currentblock(cg)
+            push!(currentregion(cg), currentblock(cg))
+            n_phi_nodes = 0
 
-        if argtype <: DenseArray
-            @debug argtype
-            N = ndims(argtype)
-            length = IR.get_result(push!(cg.entryblock, index.constant(value=Attribute(1, IR.IndexType()))))
-            sizes = []
-            for i in 0:N-1
-                index_ = IR.get_result(push!(cg.entryblock, index.constant(value=Attribute(i, IR.IndexType()))))
-                dim = IR.get_result(push!(cg.entryblock, memref.dim(arg, index_; location=IR.Location(), result=IR.IndexType())))
-                push!(sizes, dim)
-                length = IR.get_result(push!(cg.entryblock, index.mul(length, dim; result=IR.IndexType(), location=IR.Location())))
+            for sidx in bb.stmts
+                stmt = cg.ir.stmts[sidx]
+                inst = stmt[:inst]
+                @info "Working on: $(inst)"
+                if inst == nothing
+                    inst = Core.GotoNode(block_id+1)
+                    line = Core.LineInfoNode(Brutus, :code_mlir, Symbol(@__FILE__), Int32(@__LINE__), Int32(@__LINE__))
+                else
+                    line = cg.ir.linetable[stmt[:line]]
+                end
+
+                if Meta.isexpr(inst, :call)
+                    val_type = stmt[:type]
+                    called_func, args... = inst.args
+
+                    if called_func isa GlobalRef # TODO: should probably use something else here
+                        called_func = getproperty(called_func.mod, called_func.name)
+                    end
+                    args = map(args) do arg
+                        if arg isa GlobalRef
+                            arg = getproperty(arg.mod, arg.name)
+                        elseif arg isa QuoteNode
+                            arg = arg.value
+                        end
+                        return arg
+                    end
+
+                    getintrinsic(gr::GlobalRef) = Core.Compiler.abstract_eval_globalref(gr)
+                    getintrinsic(inst::Expr) = getintrinsic(first(inst.args))
+                    getintrinsic(mod::Module, name::Symbol) = getintrinsic(GlobalRef(mod, name))
+
+                    loc = Location(string(line.file), line.line, 0)
+                    ic = InstructionContext{called_func}(args, val_type, loc)
+                    # return cg, ic
+                    @show typeof(ic)
+                    cg, res = emit(cg, ic)
+
+                    values[sidx] = res
+                elseif Meta.isexpr(inst, :invoke)
+                    val_type = stmt[:type]
+                    _, called_func, args... = inst.args
+
+                    if called_func isa GlobalRef # TODO: should probably use something else here
+                        called_func = getproperty(called_func.mod, called_func.name)
+                    end
+                    args = map(args) do arg
+                        if arg isa GlobalRef
+                            arg = getproperty(arg.mod, arg.name)
+                        elseif arg isa QuoteNode
+                            arg = arg.value
+                        end
+                        return arg
+                    end
+                    loc = Location(string(line.file), line.line, 0)
+                    if val_type == Core.Const(nothing)
+                        val_type = Nothing
+                    end
+                    ic = InstructionContext{called_func}(args, val_type, loc)
+
+                    argvalues = get_value.(Ref(cg), ic.args)
+                    
+                    out = mlircompilationpass() do
+                        called_func(argvalues...)
+                    end
+
+                    values[sidx] = out
+
+
+                elseif inst isa PhiNode
+                    values[sidx] = IR.get_argument(currentblock(cg), n_phi_nodes += 1)
+                elseif inst isa PiNode
+                    values[sidx] = get_value(values, inst.val)
+                elseif inst isa GotoNode
+                    args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.label))...]
+                    dest = cg.blocks[inst.label]
+                    loc = Location(string(line.file), line.line, 0)
+                    push!(currentblock(cg), cf.br(args; dest, location=loc))
+                elseif inst isa GotoIfNot
+                    false_args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.dest))...]
+                    cond = get_value(cg, inst.cond)
+                    @assert length(bb.succs) == 2 # NOTE: We assume that length(bb.succs) == 2, this might be wrong
+                    trueDest = setdiff(bb.succs, inst.dest) |> only
+                    true_args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, trueDest))...]
+                    trueDest = cg.blocks[trueDest]
+                    falseDest = cg.blocks[inst.dest]
+
+                    location = Location(string(line.file), line.line, 0)
+                    # @show cond
+                    # if inst.cond.id == 54; return 1; end
+                    cond_br = cf.cond_br(cond, true_args, false_args; trueDest, falseDest, location)
+                    push!(currentblock(cg), cond_br)
+                elseif inst isa ReturnNode
+                    ignore_returns && continue
+                    line = cg.ir.linetable[stmt[:line]]
+                    loc = Location(string(line.file), line.line, 0)
+
+                    returnvalue = isdefined(inst, :val) ? indextoi64(cg, get_value(cg, inst.val)) : IR.get_result(push!(currentblock(cg), llvm.mlir_undef(; res=MLIRType(cg.ret), location=loc)))
+                    push!(currentblock(cg), func.return_([returnvalue]; location=loc))
+
+                elseif Meta.isexpr(inst, :code_coverage_effect)
+                    # Skip
+                elseif Meta.isexpr(inst, :boundscheck)
+                    @warn "discarding boundscheck"
+                    cg.values[sidx] = IR.get_result(push!(currentblock(cg), arith.constant(value=true)))
+                else
+                    # @warn "unhandled ir $(inst)"
+                    # return inst
+                    error("unhandled ir $(inst)")
+                end
             end
-            sizes = Tuple(sizes)
-
-            if argtype <: MemRef
-                arg = (;
-                    # allocated_pointer, # shouldn't occur in ircode so doesn't matter
-                    aligned_pointer=arg,
-                    # offset, # shouldn't occur in ircode so doesn't matter
-                    sizes = sizes,
-                )
-            elseif argtype <: Array
-                # This NamedTuple mirrors the layout of a Julia Array:
-                arg = (;
-                    ref=(;
-                        ptr_or_offset=arg,
-                        mem=(; length=length, ptr=nothing)
-                    ),
-                    size=sizes
-                )
-            else throw("Array type $argtype not supported.")
+        end
+        
+        func_name = nameof(f)
+        
+        # add fallthrough to next block if necessary
+        for (i, b) in enumerate(cg.blocks)
+            if (i != length(cg.blocks) && IR.mlirIsNull(API.mlirBlockGetTerminator(b)))
+                @warn "Block $i did not have a terminator, adding one."
+                args = []
+                dest = cg.blocks[i+1]
+                loc = IR.Location()
+                push!(b, cf.br(args; dest, location=loc))
             end
         end
 
-        println("adding argument $i")
-        cg.args[i] = argtype(arg) # Note that Core.Argument(index) ends up at index-1 in this array. We handle this in get_value.
-        println("$argtype => $(MLIRType(argtype))")
-    end
+        if emit_region
+            println("emitting region")
+            @show currentregion(cg)
+            println(currentregion(cg).region.ptr)
+            return currentregion(cg)
+        else
+            input_types = MLIRType[
+                IR.get_type(IR.get_argument(cg.entryblock, i))
+                for i in 1:IR.num_arguments(cg.entryblock)
+            ]
+            result_types = [MLIRType(ret)]
 
-    for (block_id, bb) in enumerate(cg.ir.cfg.blocks)
-        cg.currentblockindex = block_id
-        @info "number of regions: $(length(cg.regions))"
-        push!(currentregion(cg), currentblock(cg))
-        n_phi_nodes = 0
+            ftype = MLIRType(input_types => result_types)
+            op = IR.create_operation(
+                "func.func",
+                Location();
+                attributes = [
+                    NamedAttribute("sym_name", IR.Attribute(string(func_name))),
+                    NamedAttribute("function_type", IR.Attribute(ftype)),
+                    NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
+                ],
+                owned_regions = Region[currentregion(cg)],
+                result_inference=false,
+            )
 
-        for sidx in bb.stmts
-            stmt = cg.ir.stmts[sidx]
-            inst = stmt[:inst]
-            @info "Working on: $(inst)"
-            if inst == nothing
-                inst = Core.GotoNode(block_id+1)
-                line = Core.LineInfoNode(Brutus, :code_mlir, Symbol(@__FILE__), Int32(@__LINE__), Int32(@__LINE__))
-            else
-                line = cg.ir.linetable[stmt[:line]]
+            IR.verifyall(op)    
+            if IR.verify(op) && do_simplify
+                simplify(op)
             end
-
-            if Meta.isexpr(inst, :call)
-                val_type = stmt[:type]
-                called_func, args... = inst.args
-
-                if called_func isa GlobalRef # TODO: should probably use something else here
-                    called_func = getproperty(called_func.mod, called_func.name)
-                end
-                args = map(args) do arg
-                    if arg isa GlobalRef
-                        arg = getproperty(arg.mod, arg.name)
-                    elseif arg isa QuoteNode
-                        arg = arg.value
-                    end
-                    return arg
-                end
-
-                getintrinsic(gr::GlobalRef) = Core.Compiler.abstract_eval_globalref(gr)
-                getintrinsic(inst::Expr) = getintrinsic(first(inst.args))
-                getintrinsic(mod::Module, name::Symbol) = getintrinsic(GlobalRef(mod, name))
-
-                loc = Location(string(line.file), line.line, 0)
-                ic = InstructionContext{called_func}(args, val_type, loc)
-                # return cg, ic
-                @show typeof(ic)
-                cg, res = emit(cg, ic)
-
-                values[sidx] = res
-            elseif Meta.isexpr(inst, :invoke)
-                val_type = stmt[:type]
-                _, called_func, args... = inst.args
-
-                if called_func isa GlobalRef # TODO: should probably use something else here
-                    called_func = getproperty(called_func.mod, called_func.name)
-                end
-                args = map(args) do arg
-                    if arg isa GlobalRef
-                        arg = getproperty(arg.mod, arg.name)
-                    elseif arg isa QuoteNode
-                        arg = arg.value
-                    end
-                    return arg
-                end
-                loc = Location(string(line.file), line.line, 0)
-                ic = InstructionContext{called_func}(args, val_type, loc)
-
-                argvalues = get_value.(Ref(cg), ic.args)
-
-                out = mlircompilationpass() do
-                    called_func(argvalues...)
-                end
-                @info out
-
-                values[sidx] = out
-
-
-            elseif inst isa PhiNode
-                values[sidx] = IR.get_argument(currentblock(cg), n_phi_nodes += 1)
-            elseif inst isa PiNode
-                values[sidx] = get_value(values, inst.val)
-            elseif inst isa GotoNode
-                args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.label))...]
-                dest = cg.blocks[inst.label]
-                loc = Location(string(line.file), line.line, 0)
-                push!(currentblock(cg), cf.br(args; dest, location=loc))
-            elseif inst isa GotoIfNot
-                false_args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.dest))...]
-                cond = get_value(cg, inst.cond)
-                @assert length(bb.succs) == 2 # NOTE: We assume that length(bb.succs) == 2, this might be wrong
-                trueDest = setdiff(bb.succs, inst.dest) |> only
-                true_args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, trueDest))...]
-                trueDest = cg.blocks[trueDest]
-                falseDest = cg.blocks[inst.dest]
-
-                location = Location(string(line.file), line.line, 0)
-                # @show cond
-                # if inst.cond.id == 54; return 1; end
-                cond_br = cf.cond_br(cond, true_args, false_args; trueDest, falseDest, location)
-                push!(currentblock(cg), cond_br)
-            elseif inst isa ReturnNode
-                line = cg.ir.linetable[stmt[:line]]
-                loc = Location(string(line.file), line.line, 0)
-
-                returnvalue = isdefined(inst, :val) ? indextoi64(cg, get_value(cg, inst.val)) : IR.get_result(push!(currentblock(cg), llvm.mlir_undef(; res=MLIRType(cg.ret), location=loc)))
-                push!(currentblock(cg), func.return_([returnvalue]; location=loc))
-
-            elseif Meta.isexpr(inst, :code_coverage_effect)
-                # Skip
-            elseif Meta.isexpr(inst, :boundscheck)
-                @warn "discarding boundscheck"
-                cg.values[sidx] = IR.get_result(push!(currentblock(cg), arith.constant(value=true)))
-            else
-                # @warn "unhandled ir $(inst)"
-                # return inst
-                error("unhandled ir $(inst)")
-            end
-        end        
-    end
-    
-    func_name = nameof(f)
-    
-    # add fallthrough to next block if necessary
-    for (i, b) in enumerate(cg.blocks)
-        if (i != length(cg.blocks) && IR.mlirIsNull(API.mlirBlockGetTerminator(b)))
-            @warn "Block $i did not have a terminator, adding one."
-            args = []
-            dest = cg.blocks[i+1]
-            loc = IR.Location()
-            push!(b, cf.br(args; dest, location=loc))
+            return op
         end
     end
 
-    LLVM15 = true
 
-    input_types = MLIRType[
-        IR.get_type(IR.get_argument(cg.entryblock, i))
-        for i in 1:IR.num_arguments(cg.entryblock)
-    ]
-    result_types = [MLIRType(ret)]
-
-    ftype = MLIRType(input_types => result_types)
-    op = IR.create_operation(
-        LLVM15 ? "func.func" : "builtin.func",
-        Location();
-        attributes = [
-            NamedAttribute("sym_name", IR.Attribute(string(func_name))),
-            NamedAttribute(LLVM15 ? "function_type" : "type", IR.Attribute(ftype)),
-            NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
-        ],
-        owned_regions = Region[currentregion(cg)],
-        result_inference=false,
-    )
-
-    IR.verifyall(op)
-
-    if IR.verify(op) && do_simplify
-        simplify(op)
-    end
-
-    op
 end
 
 """

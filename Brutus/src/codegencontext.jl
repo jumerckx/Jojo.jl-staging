@@ -1,3 +1,5 @@
+using MLIR: IR, API
+
 mutable struct CodegenContext
     regions::Vector{Region}
     loop_thunks::Vector
@@ -9,7 +11,7 @@ mutable struct CodegenContext
     const values::Vector
     const args::Vector
 
-    function CodegenContext(
+    function CodegenContext(;
             regions::Vector{Region},
             loop_thunks::Vector,
             blocks::Vector{Block},
@@ -20,9 +22,17 @@ mutable struct CodegenContext
             values::Vector,
             args::Vector)
         cg = new(regions, loop_thunks, blocks, entryblock, currentblockindex, ir, ret, values, args)
-        @show "Activating new codegencontext"
         activate(cg)
         return cg
+    end
+end
+
+function CodegenContext(f::Core.Function; kwargs...)
+    cg = CodegenContext(; kwargs...)
+    try
+        f(cg)
+    finally
+        deactivate(cg)
     end
 end
 
@@ -73,11 +83,7 @@ function get_value(cg::CodegenContext, x)
         return cg.args[x.n-1]
         # return IR.get_argument(cg.entryblock, x.n - 1)
     elseif x isa BrutusType
-        if x isa Int
-            return IR.get_result(push!(currentblock(cg), index.constant(value=Attribute(x, IR.IndexType()))))
-        else
-            return IR.get_result(push!(currentblock(cg), arith.constant(value=x)))
-        end            
+        return x
     elseif (x isa Type) && (x <: BrutusType)
         return IR.MLIRType(x)
     elseif x == GlobalRef(Main, :nothing) # This might be something else than Main sometimes?

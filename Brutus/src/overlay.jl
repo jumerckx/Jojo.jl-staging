@@ -3,6 +3,8 @@ import MLIR.IR.create_operation
 
 @MethodTable MLIRCompilation
 mlircompilationpass = @overlaypass MLIRCompilation
+@inline (::typeof(mlircompilationpass))(::typeof(Base.typename), @nospecialize args...) = 
+    Base.typename(args...)
 
 @overlay MLIRCompilation function IR.create_operation(
         name, loc;
@@ -12,8 +14,8 @@ mlircompilationpass = @overlaypass MLIRCompilation
         successors=nothing,
         attributes=nothing,
         result_inference=isnothing(results))
-    @info "Overlayed!!!"
-    op = @nonoverlay create_operation(
+    @info "overlaid create_operation for $name"
+    op = @nonoverlay IR.create_operation(
         name, loc;
         results,
         operands,
@@ -22,22 +24,10 @@ mlircompilationpass = @overlaypass MLIRCompilation
         attributes,
         result_inference)
     push!(currentblock(codegencontext()), op)
-    return op
-end
 
-# from https://github.com/JuliaLang/julia/blob/1b183b93f4b78f567241b1e7511138798cea6a0d/base/experimental.jl#L345C1-L357C4
-function overlay_def!(mt, @nospecialize ex)
-    arg1 = ex.args[1]
-    if isexpr(arg1, :call)
-        arg1.args[1] = Expr(:overlay, mt, arg1.args[1])
-    elseif isexpr(arg1, :(::))
-        overlay_def!(mt, arg1)
-    elseif isexpr(arg1, :where)
-        overlay_def!(mt, arg1)
-    else
-        error("@overlay requires a function definition")
-    end
-    return ex
+    cg = codegencontext()
+
+    return op
 end
 
 function mlirfunction_(expr)
@@ -52,7 +42,7 @@ function mlirfunction_(expr)
 
     # hacky: in the MLIRCompilation context, we get rid of the return type as this could be something else than what should be in the Julia IR.
     delete!(dict, :rtype)
-    expr = overlay_def!(methodtable, combinedef(dict))
+    expr = Base.Experimental.overlay_def!(methodtable, combinedef(dict))
 
     return quote
         $(esc(methodtable)) = MLIRCompilation
