@@ -37,7 +37,7 @@ function lowerModuleToLLVM(mod::IR.MModule)
 
     IR.add_pipeline!(
         MLIR.IR.OpPassManager(pm), 
-        "func.func(convert-vector-to-scf{full-unroll=false lower-tensors=false target-rank=1}),func.func(convert-linalg-to-loops),lower-affine,convert-scf-to-cf,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=true test-convergence=false top-down=true},cse,convert-vector-to-llvm{enable-amx=false enable-arm-neon=false enable-arm-sve=false enable-x86vector=false force-32bit-vector-indices=true reassociate-fp-reductions=false},func.func(convert-math-to-llvm{approximate-log1p=true}),expand-strided-metadata,lower-affine,finalize-memref-to-llvm{index-bitwidth=0 use-aligned-alloc=false use-generic-functions=false},convert-func-to-llvm{index-bitwidth=0 use-bare-ptr-memref-call-conv=false},convert-index-to-llvm{index-bitwidth=0},reconcile-unrealized-casts"
+        "func.func(convert-vector-to-scf{full-unroll=false lower-tensors=false target-rank=1}),func.func(convert-linalg-to-loops),lower-affine,convert-scf-to-cf,canonicalize{  max-iterations=10 max-num-rewrites=-1 region-simplify=true test-convergence=false top-down=true},cse,convert-vector-to-llvm{enable-amx=false enable-arm-neon=false enable-arm-sve=false enable-x86vector=false force-32bit-vector-indices=true reassociate-fp-reductions=false},func.func(convert-math-to-llvm{approximate-log1p=true}),expand-strided-metadata,lower-affine,finalize-memref-to-llvm{index-bitwidth=0 use-aligned-alloc=false use-generic-functions=false},convert-func-to-llvm{index-bitwidth=0 use-bare-ptr-memref-call-conv=false},convert-index-to-llvm{index-bitwidth=0}"
     )
 
     # IR.add_owned_pass!(pm, API.mlirCreateConversionConvertAffineToStandard())

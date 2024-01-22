@@ -214,7 +214,7 @@ This only supports a few Julia Core primitives and scalar types of type $BrutusT
     handful of primitives. A better to perform this conversion would to create a dialect
     representing Julia IR and progressively lower it to base MLIR dialects.
 """
-function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns=false)
+function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns=emit_region)
     ctx = context()
     ir, ret = Core.Compiler.code_ircode(f, types) |> only
     @assert first(ir.argtypes) isa Core.Const
@@ -295,6 +295,9 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                 elseif Meta.isexpr(inst, :invoke)
                     val_type = stmt[:type]
                     _, called_func, args... = inst.args
+                    if called_func isa Core.SSAValue
+                        called_func = get_value(cg, called_func)
+                    end
 
                     if called_func isa GlobalRef # TODO: should probably use something else here
                         called_func = getproperty(called_func.mod, called_func.name)
@@ -314,6 +317,7 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                     ic = InstructionContext{called_func}(args, val_type, loc)
 
                     argvalues = get_value.(Ref(cg), ic.args)
+                    @show called_func, argvalues
                     
                     out = mlircompilationpass() do
                         called_func(argvalues...)
@@ -358,10 +362,16 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                 elseif Meta.isexpr(inst, :boundscheck)
                     @warn "discarding boundscheck"
                     cg.values[sidx] = IR.get_result(push!(currentblock(cg), arith.constant(value=true)))
+                elseif Meta.isexpr(inst, :GlobalRef)
+
                 else
                     # @warn "unhandled ir $(inst)"
                     # return inst
-                    error("unhandled ir $(inst)")
+                    @warn "unhandled ir $(inst) of type $(typeof(inst))"
+                    if inst isa GlobalRef
+                        inst = getproperty(inst.mod, inst.name)
+                    end
+                    cg.values[sidx] = inst
                 end
             end
         end

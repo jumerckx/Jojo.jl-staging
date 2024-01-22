@@ -47,7 +47,7 @@ function mlirfunction_(expr)
     return quote
         $(esc(methodtable)) = MLIRCompilation
 
-        function $(esc(dict[:name]))($(esc.(dict[:args])...); $(esc.(dict[:kwargs])...))::$(esc(rtype)) where {$(esc.(dict[:whereparams])...)}
+        @noinline function $(esc(dict[:name]))($(esc.(dict[:args])...); $(esc.(dict[:kwargs])...))::$(esc(rtype)) where {$(esc.(dict[:whereparams])...)}
             new_intrinsic()
         end
 
