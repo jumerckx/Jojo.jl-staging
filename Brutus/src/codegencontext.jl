@@ -83,11 +83,11 @@ function get_value(cg::CodegenContext, x)
         return cg.args[x.n-1]
         # return IR.get_argument(cg.entryblock, x.n - 1)
     elseif x isa BrutusType
-        if x isa Int
-            return IR.get_result(push!(currentblock(cg), arith.constant(value=x)))
-        else
+        # if x isa Int
+        #     return IR.get_result(push!(currentblock(cg), arith.constant(value=x)))
+        # else
             return x
-        end
+        # end
     elseif (x isa Type) && (x <: BrutusType)
         return IR.MLIRType(x)
     elseif x == GlobalRef(Main, :nothing) # This might be something else than Main sometimes?

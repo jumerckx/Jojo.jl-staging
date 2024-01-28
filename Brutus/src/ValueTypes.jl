@@ -23,7 +23,6 @@ struct MLIRTensor{T, N} <: MLIRArrayLike{T, N}
 end
 MLIR.IR.MLIRType(::Type{MLIRTensor{T, N}}) where {T, N} = mlirRankedTensorTypeGet(
     N,
-    # Int[10 for _ in 1:N],
     Int[mlirShapedTypeGetDynamicSize() for _ in 1:N],
     MLIRType(T),
     Attribute()) |> MLIRType

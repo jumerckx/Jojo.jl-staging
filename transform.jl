@@ -23,21 +23,18 @@ IR.MLIRType(::Type{AnyOp}) = IR.MLIRType(IR.parse(IR.MLIRType, "!transform.any_o
         ops = IR.ArrayAttribute([IR.Attribute(name)])
     )) |> AnyOp
 end
-@mlirfunction function structured_tile_using_for(op::AnyOp, tilesizes::NTuple{N, Int})::Nothing where N
-    loops = IR.MLIRType[]
-    for _ in 1:length(tilesizes)
-        push!(loops, IR.MLIRType(AnyOp))
-    end
+@mlirfunction function structured_tile_using_for(op::AnyOp, tilesizes::NTuple{N, Int})::AnyOp where N
+    loops = fill(IR.MLIRType(AnyOp), count(tilesizes != 0))
     static_sizes = IR.Attribute(API.mlirDenseI64ArrayGet(IR.context(), length(tilesizes), [tilesizes...]))
     scalable_sizes = IR.Attribute(API.mlirDenseBoolArrayGet(IR.context(), length(tilesizes), fill(Int32(false), length(tilesizes))))
-    transform.structured_tile_using_for(
+    op = transform.structured_tile_using_for(
         op, [];
         tiled_linalg_op = IR.MLIRType(AnyOp),
         loops,
         static_sizes,
         scalable_sizes
     )
-    nothing
+    return AnyOp(IR.get_result(op, 1))
 end
 @mlirfunction function yield(results::NTuple{N})::Nothing where N
     transform.yield(collect(results))
@@ -61,19 +58,18 @@ end
     nothing
 end
 
-Base.code_ircode(()) do 
-    named_sequence() do op
-        matched = structured_match(op, "linalg.generic")
-        structured_tile_using_for(matched, (2, ))
-        yield()
-    end
-    1
+Base.code_ircode((AnyOp, )) do op
+    matched = structured_match(op, "linalg.generic")
+    tiled = structured_tile_using_for(matched, (0, 0, 1))
+    tiled = structured_tile_using_for(tiled, (0, 1, 0))
+    yield()
 end
 
 code_mlir(Tuple{}) do 
     named_sequence() do op
         matched = structured_match(op, "linalg.generic")
-        structured_tile_using_for(matched, (16, 16, 16))
+        tiled = structured_tile_using_for(matched, (0, 0, 1))
+        tiled = structured_tile_using_for(tiled, (0, 1, 0))
         yield()
     end
     1
