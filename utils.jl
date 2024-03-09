@@ -117,6 +117,13 @@ function jit(mod::IR.MModule; opt=0)
     return lookup
 end
 
+function jit(op::IR.Operation, name; opt=0)
+    mod = IR.MModule(IR.Location())
+    push!(IR.get_body(mod), op)
+    lowerModuleToLLVM(mod)
+    jit(mod; opt)(startswith(name, "_mlir_ciface_") ? name : "_mlir_ciface_$(name)")
+end
+
 cb = IR.Block() # Fixed block for demonstration purposes.
 IR.lose_ownership!(cb)
 currentblock() = cb
