@@ -56,6 +56,16 @@ function i64toindex(cg, x::Value; loc=IR.Location())
     end
 end
 
+emit(cg::CodegenContext, ic::InstructionContext{F}) where {F} = mlircompilationpass() do 
+        # F(get_value.(Ref(cg), ic.args)...)
+        # work around https://github.com/JuliaDebug/CassetteOverlay.jl/issues/39:
+        args = []
+        for arg in ic.args
+            push!(args, get_value(cg, arg))
+        end
+        cg, F(args...)
+    end
+
 emit(cg::CodegenContext, ic::InstructionContext{Base.and_int}) = cg, single_op_wrapper(arith.andi)(cg, ic)
 emit(cg::CodegenContext, ic::InstructionContext{Base.add_int}) = cg, single_op_wrapper(arith.addi)(cg, ic)
 emit(cg::CodegenContext, ic::InstructionContext{Base.sub_int}) = cg, single_op_wrapper(arith.subi)(cg, ic)
@@ -203,6 +213,26 @@ function collect_value_arguments(ir, from, to)
     values
 end
 
+unpack(T) = unpack(IR.MLIRValueTrait(T), T)
+unpack(::IR.Convertible, T) = (T, )
+function unpack(::IR.NonConvertible, T)
+    @assert isbitstype(T) "Cannot unpack type $T that is not `isbitstype`"
+    fc = fieldcount(T)
+    if (fc == 0)
+        if (sizeof(T) == 0)
+            return []
+        else
+            error("Unable to unpack NonConvertible type $T any further")
+        end
+    end
+    unpacked = []
+    for i in 1:fc
+        ft = fieldtype(T, i)
+        append!(unpacked, unpack(ft))
+    end
+    return unpacked
+end
+
 """
     code_mlir(f, types::Type{Tuple}) -> IR.Operation
 
@@ -242,9 +272,13 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
         args
     ) do cg
         for (i, argtype) in enumerate(types.parameters)
-            arg = IR.push_argument!(cg.entryblock, MLIRType(argtype), Location())
-            cg.args[i] = argtype(arg) # Note that Core.Argument(index) ends up at index-1 in this array. We handle this in get_value.
-            println("argument: $argtype => $(MLIRType(argtype))")
+            args = []
+            for t in unpack(argtype)
+                arg = IR.push_argument!(cg.entryblock, MLIRType(t), Location())
+                push!(args, t(arg))
+            end
+            # TODO: what to do with padding?
+            cg.args[i] = reinterpret(argtype, Tuple(args))
         end
 
         for (block_id, bb) in enumerate(cg.ir.cfg.blocks)
@@ -271,6 +305,10 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
 
                     if called_func isa GlobalRef # TODO: should probably use something else here
                         called_func = getproperty(called_func.mod, called_func.name)
+                    elseif called_func isa Core.SSAValue
+                        called_func = get_value(cg, called_func)
+                    elseif called_func isa QuoteNode
+                        called_func = called_func.value
                     end
                     args = map(args) do arg
                         if arg isa GlobalRef
@@ -286,9 +324,10 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                     getintrinsic(mod::Module, name::Symbol) = getintrinsic(GlobalRef(mod, name))
 
                     loc = Location(string(line.file), line.line, 0)
+                    # return called_func, args, val_type, loc
                     ic = InstructionContext{called_func}(args, val_type, loc)
                     # return cg, ic
-                    @show typeof(ic)
+                    @warn ic
                     cg, res = emit(cg, ic)
 
                     values[sidx] = res
@@ -297,10 +336,10 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                     _, called_func, args... = inst.args
                     if called_func isa Core.SSAValue
                         called_func = get_value(cg, called_func)
-                    end
-
-                    if called_func isa GlobalRef # TODO: should probably use something else here
+                    elseif called_func isa GlobalRef # TODO: should probably use something else here
                         called_func = getproperty(called_func.mod, called_func.name)
+                    elseif called_func isa QuoteNode
+                        called_func = called_func.value
                     end
                     args = map(args) do arg
                         if arg isa GlobalRef
@@ -317,7 +356,6 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                     ic = InstructionContext{called_func}(args, val_type, loc)
 
                     argvalues = get_value.(Ref(cg), ic.args)
-                    @show called_func, argvalues
                     
                     out = mlircompilationpass() do
                         called_func(argvalues...)
@@ -353,10 +391,20 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                     ignore_returns && continue
                     line = cg.ir.linetable[stmt[:line]]
                     loc = Location(string(line.file), line.line, 0)
-
-                    returnvalue = isdefined(inst, :val) ? indextoi64(cg, get_value(cg, inst.val)) : IR.get_result(push!(currentblock(cg), llvm.mlir_undef(; res=MLIRType(cg.ret), location=loc)))
-                    push!(currentblock(cg), func.return_([returnvalue]; location=loc))
-
+                    if isdefined(inst, :val)
+                        if (inst.val isa GlobalRef)  && (getproperty(inst.val.mod, inst.val.name) == nothing)
+                            returnvalue = []
+                        else
+                            v = get_value(cg, inst.val)
+                            returnvalue = reinterpret(Tuple{unpack(typeof(v))...}, v)
+                        end
+                    else
+                        returnvalue = [IR.get_result(push!(currentblock(cg), llvm.mlir_undef(; res=MLIRType(cg.ret), location=loc)))]
+                    end
+                    push!(currentblock(cg), func.return_(returnvalue; location=loc))
+                elseif Meta.isexpr(inst, :new)
+                    args = get_value.(Ref(cg), inst.args[2:end])
+                    values[sidx] = reinterpret(inst.args[1], Tuple(args))
                 elseif Meta.isexpr(inst, :code_coverage_effect)
                     # Skip
                 elseif Meta.isexpr(inst, :boundscheck)
@@ -399,7 +447,7 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                 IR.get_type(IR.get_argument(cg.entryblock, i))
                 for i in 1:IR.num_arguments(cg.entryblock)
             ]
-            result_types = [MLIRType(ret)]
+            result_types = MLIRType.(unpack(ret))
 
             ftype = MLIRType(input_types => result_types)
             op = IR.create_operation(

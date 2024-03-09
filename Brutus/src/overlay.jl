@@ -60,6 +60,10 @@ end
 
 Will define the provided function definition twice. Once replacing the body with a call to
 `new_intrinsic()`, and once with the body as-is, but registered in the `MLIRCompilation` method table.
+
+!!! note
+
+    This macro should only be called in the global scope
 """
 macro mlirfunction(f)
     f = macroexpand(__module__, f)

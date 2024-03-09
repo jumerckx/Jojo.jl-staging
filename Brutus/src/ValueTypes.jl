@@ -8,6 +8,9 @@ using MLIR.API: mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDy
 import MLIR.IR: MLIRValueTrait
 
 abstract type MLIRArrayLike{T, N} <: AbstractArray{T, N} end
+function Base.reinterpret(::Type{Tuple{A}}, array::A) where {A<:MLIRArrayLike}
+    return (array, )
+end
 MLIRValueTrait(::Type{<:MLIRArrayLike}) = Convertible()
 Base.show(io::IO, a::A) where {A<:MLIRArrayLike{T, N}} where {T, N} = print(io, "$A[...]")
 Base.show(io::IO, ::MIME{Symbol("text/plain")}, a::A) where {A<:MLIRArrayLike{T, N}} where {T, N} = print(io, "$A[...]")

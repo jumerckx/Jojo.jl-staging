@@ -25,7 +25,7 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 @mlirfunction Base.:>(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
 @mlirfunction Base.:>=(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
 @mlirfunction function Base.getindex(A::memref{T}, i::Int)::T where T
-    # this method can only be called with constant i since we assume arguments to `code_mlir`` to be MLIR types, not Julia types.
+    # this method can only be called with constant i since we assume arguments to `code_mlir` to be MLIR types, not Julia types.
     i = Types.index(index.constant(; value=Attribute(i, IR.IndexType())) |> IR.get_result)
     A[i]
 end
@@ -115,10 +115,12 @@ import LinearAlgebra.mul!
     return tensor{T, 2}(IR.get_result(op))
 end
 
-f(Y, A, B) = mul!(Y, A, B)
+f(Y, A, B) = begin
+  mul!(Y, A, B)
+end 
 
 Base.code_ircode(f, (tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}))
-op = Brutus.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}})
+op = Brutus.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}, do_simplify=false)
 
 @assert IR.verify(op)
 
@@ -196,10 +198,12 @@ mod
 #   jit the function using an execution engine:
 addr = jit(mod; opt=3)("_mlir_ciface_f")
 
-@warn addr
-
 # Finally, we call the function like a regular C-function:
-@ccall $addr_f(3::Int, 2::Int)::Int
+y_, a_, b_ = zeros(Int, 10, 10), rand(Int, 10, 10), rand(Int, 10, 10)
+y, a, b = MemRef.((y_, a_, b_))
+@ccall $addr(y::Ref{MemRef}, y::Ref{MemRef}, a::Ref{MemRef}, b::Ref{MemRef})::Nothing
+
+y_ ≈ a_*b_
 
 ################################################################################################
 
@@ -334,37 +338,14 @@ pm = lowerModuleToLLVM(mod)
 
 addr = jit(mod; opt=3)("_mlir_ciface_f")
 
-struct ReturnType
-    allocated_pointer::Ptr{Int}
-    aligned_pointer::Ptr{Int}
-    offset::Int
-    sizes::NTuple{2, Int}
-    strides::NTuple{2, Int}
-end
-function ReturnType(a::Array{Int, N}, size) where {N}
-    allocated_pointer = a.ref.mem.ptr
-    aligned_pointer = a.ref.ptr_or_offset
-    offset = Int((aligned_pointer - allocated_pointer)//sizeof(Int))
-    @show offset
-    @assert offset == 0 "Arrays with Memoryref offset are, as of yet, unsupported."
-    strides = Tuple([1, cumprod(size)[1:end-1]...])
-
-    return ReturnType(
-        allocated_pointer,
-        aligned_pointer,
-        offset,
-        size,
-        strides,
-    )
-end
-ReturnType(a::Array) = ReturnType(a, size(a))
-
 a = ones(Int64, 4, 3)
 b = ones(Int64, 3, 4) .* 2
-y = similar(a, (30, 30)) .* 0
+y = similar(a, (4, 4)) .* 0
 
 a_, b_, y_ = ReturnType(a, (3, 2)), ReturnType(b, (2, 3)), ReturnType(y, (3, 3))
 
+a_, b_, y_ = MemRef.([a, b, y])
+@ccall $addr(y_::Ref{MemRef}, a_::Ref{MemRef}, b_::Ref{MemRef})::Int
 
 @ccall $addr(y_::Ref{ReturnType}, a_::Ref{ReturnType}, b_::Ref{ReturnType})::Int
 
@@ -375,7 +356,7 @@ a_, b_, y_ = ReturnType(a, (3, 2)), ReturnType(b, (2, 3)), ReturnType(y, (3, 3))
 schedules = [
     # no transformation:
     """
-    // transform.yield
+    transform.yield
     """,
     # permute loops: (1, 2, 3) -> (2, 3, 1):
     """
@@ -419,38 +400,8 @@ function mlir_bench(schedule::String)
     module attributes {transform.with_named_sequence} {
     transform.named_sequence @__transform_main(%arg0: !transform.any_op) {
         $(schedule)
-        %f00 = transform.structured.match ops{["func.func"]} in %arg0
-      : (!transform.any_op) -> !transform.any_op
-
-    // Simplify the code as tiling and fusion may have produced a lot of
-    // operations computing tensor subsets and loop ranges, some of which may be
-    // duplicated or excessively complex. Simplification involving
-    // canonicalization, common subexpression elimination, loop invariant code
-    // motion and various rewrite patterns can be applied directly from the
-    // transform dialect. Furthermore, an arbitrary combination of rewrite
-    // patterns can be applied in one sweep to a given scope, a functionality
-    // that cannot be achieved with conventional compiler passes that apply each
-    // group of patterns separately (at least without creating a new pass for
-    // each combination of pattern groups).
-    transform.apply_patterns to %f00 {
-      transform.apply_patterns.canonicalization
-      transform.apply_patterns.linalg.tiling_canonicalization
-    } : !transform.any_op
-    transform.apply_cse to %f00 : !transform.any_op
-    %all_loops = transform.structured.match interface{LoopLikeInterface}
-      in %arg0
-      : (!transform.any_op) -> !transform.any_op
-    transform.apply_licm to %all_loops : !transform.any_op
-
-    // Tiling-by-one as a way of materializing loops produced operations
-    // processing 4+D types where only a handful of dimension isn’t unit-sized,
-    // e.g., tensor<1x1x1x5x64xf32> where 5 and 64 are tile sizes. Remove such
-    // unit dimensions before vectorization, for clarity.
-    transform.apply_patterns to %f00 {
-      transform.apply_patterns.linalg.fold_unit_extent_dims_via_reshapes
-    } : !transform.any_op
-
     }
+
 
     "func.func"() <{function_type = (tensor<?x?xi64>, tensor<?x?xi64>, tensor<?x?xi64>) -> i64, sym_name = "f"}> ({
         ^bb0(%arg0: tensor<?x?xi64>, %arg1: tensor<?x?xi64>, %arg2: tensor<?x?xi64>):
@@ -484,8 +435,8 @@ for (i, schedule) in enumerate(schedules)
     b = rand(1024, 1024)
     y = rand(1024, 1024)
     println("### Schedule $i ###")
-    f = mlir_bench(schedule)
-    push!(results, @benchmark $f($y, $a, $b))
+    f_bench = mlir_bench(schedule)
+    push!(results, @benchmark $f_bench($y, $a, $b))
     display(results[end])
     println("")
 end

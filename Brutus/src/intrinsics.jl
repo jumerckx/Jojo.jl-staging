@@ -5,7 +5,7 @@ new_intrinsic = ()->Base.compilerbarrier(:const, error("Intrinsics should be com
 
 @noinline yield_for(val::T=nothing) where T = new_intrinsic()::T
 
-struct MemRef{T,N} <: DenseArray{T, N}
+mutable struct MemRef{T,N} <: DenseArray{T, N}
     allocated_pointer::Ptr{T}
     aligned_pointer::Ptr{T}
     offset::Int
