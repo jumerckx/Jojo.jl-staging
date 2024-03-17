@@ -185,3 +185,172 @@ op() = Brutus.code_mlir(Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}}, f
     f(Y, A, B)
 end
 
+includet("transform.jl")
+using .Transform
+
+Base.code_ircode(Tuple{Transform.AnyOp}) do op
+    matched = Transform.structured_match(op, "linalg.generic")
+    matched = Transform.structured_tile_using_for(matched, (0, 1, 0))
+    matched = Transform.structured_tile_using_for(matched, (0, 0, 1))
+    matched = Transform.structured_tile_using_for(matched, (1, 0, 0))
+    func = Transform.match(op, ("func.func", ))
+    Transform.apply_registered_pass(func, pass_name="convert-linalg-to-affine-loops")
+    Transform.yield()
+
+
+end
+
+begin
+    function ns()
+        region = Brutus.code_mlir(Tuple{}, ignore_returns=true, emit_region=true) do 
+            Transform.named_sequence() do op
+                matched = Transform.structured_match(op, "linalg.generic")
+
+                # Transform.structured_tile_using_for(matched, (128, 0, 128))
+
+                matched = Transform.structured_tile_using_for(matched, (1, 0, 0))
+                matched = Transform.structured_tile_using_for(matched, (0, 0, 1))
+                matched = Transform.structured_tile_using_for(matched, (0, 1, 0))
+
+                # func = Transform.structured_match(op, "func.func")
+                # Transform.apply_registered_pass(func, pass_name="convert-linalg-to-affine-loops")
+                Transform.yield()
+            end
+        end
+        return region
+        IR.get_first_block(region)
+    end
+    builtin.module_(;
+        bodyRegion=ns()) |> display
+end
+
+function op()
+    mod_op = parse(IR.MModule, """
+    #map = affine_map<(d0, d1, d2) -> (d0, d1)>
+    #map1 = affine_map<(d0, d1, d2) -> (d1, d2)>
+    #map2 = affine_map<(d0, d1, d2) -> (d0, d2)>
+
+    !F = f32
+    // !T = memref<?x?x!F>
+    !T = memref<?x?x!F, strided<[?, 1]>>
+
+    func.func @f(%arg0: !T, %arg1: !T, %arg2: !T) attributes {llvm.emit_c_interface} {
+    linalg.generic {indexing_maps = [#map, #map1, #map2], iterator_types = ["parallel", "reduction", "parallel"]} ins(%arg1, %arg2 : !T, !T) outs(%arg0 : !T) {
+    ^bb0(%in: !F, %in_0: !F, %out: !F):
+        %1 = arith.mulf %in, %in_0 : !F
+        %2 = arith.addf %out, %1 : !F
+        linalg.yield %2 : !F
+    }
+    return
+    }
+    """) |> IR.get_operation
+    first(IR.OperationIterator(IR.get_first_block(first(IR.RegionIterator(mod_op))))) |> API.mlirOperationClone |> IR.Operation
+end
+
+begin
+    bodyRegion = ns()
+    push!(IR.get_first_block(bodyRegion), op())
+    mod = builtin.module_(;
+        additional_attributes=[NamedAttribute("transform.with_named_sequence", IR.Attribute(API.mlirUnitAttrGet(IR.context())))],
+        bodyRegion
+    ) |> MModule
+end
+
+begin
+    mlir_opt(mod, "transform-interpreter")
+    mlir_opt(mod, "test-transform-dialect-erase-schedule")
+    mlir_opt(mod, "one-shot-bufferize{bufferize-function-boundaries=true}")
+    mlir_opt(mod, "fold-memref-subview-ops")
+    # mlir_opt(mod, "convert-linalg-to-affine-loops")
+    # mlir_opt(mod, "func.func(affine-loop-coalescing)")
+    # mlir_opt(mod, "func.func(affine-loop-invariant-code-motion)")
+    # mlir_opt(mod, "func.func(affine-loop-unroll{unroll-full})")
+    # mlir_opt(mod, "builtin.module(func.func(affine-loop-normalize))")
+    # mlir_opt(mod, "lower-affine")
+    # mlir_opt(mod, "mem2reg")
+    display(mod)
+    println("\n---------------------------\n")
+    display(Brutus.simplify(mod))
+end
+
+
+lowerModuleToLLVM(mod)
+
+addr = jit(mod)("_mlir_ciface_f")
+
+a = rand(Float32, 1024, 1024)
+b = rand(Float32, 1024, 1024)
+c = zeros(Float32, 1024, 1024)
+@ccall $addr(MemRef(c)::Ref{MemRef}, MemRef(c)::Ref{MemRef}, MemRef(a)::Ref{MemRef}, MemRef(b)::Ref{MemRef})::Nothing
+
+using Chairmarks
+
+@b ccall(addr, Nothing, (Ref{MemRef}, Ref{MemRef}, Ref{MemRef}, Ref{MemRef}), MemRef(c), MemRef(c), MemRef(a), MemRef(b))
+
+c ≈ a*b
+
+using LoopVectorization, Chairmarks
+
+
+function f(c, a, b)
+    I, J, K = size(a)..., size(b, 2)
+
+    @turbo for i in 1:I
+        for j in 1:J
+            temp = zero(eltype(c))
+            for k in 1:K
+                temp += a[i, k] * b[k, j]
+            end
+            c[i, j] = temp
+        end
+    end
+end
+
+function f2(c, a, b)
+    I, J, K = size(a)..., size(b, 2)
+
+    for i in 1:I
+        for j in 1:J
+            temp = zero(eltype(c))
+            for k in 1:K
+                @inbounds temp += a[i, k] * b[k, j]
+            end
+            @inbounds c[i, j] = temp
+        end
+    end
+end
+
+function f3(c, a, b)
+    I, J, K = size(a)..., size(b, 2)
+
+    for j in 1:J
+        for k in 1:K
+            for i in 1:I
+                @inbounds c[i, j] += a[i, k] * b[k, j]
+            end
+        end
+    end
+end
+
+function f4(c, a, b)
+    N = 4
+
+    for j in 1:1024
+        for k in 1:1024
+            for i in 1:4:1024
+                Base.@nexprs 4 l -> (@inbounds c[i+l-1, j] += a[i+l-1, k] * b[k, j])
+                # @inbounds c[i, j] += a[i, k] * b[k, j]
+            end
+        end
+    end
+end
+
+
+
+
+@b f(c, a, b) seconds=3
+@b f2(c, a, b)
+@b f3(c, a, b) seconds=3
+@b f4(c, a, b) seconds=3
+BLAS.set_num_threads(1)
+@b mul!(c, a, b) seconds=3

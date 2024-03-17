@@ -1,7 +1,9 @@
 [deps]
 Brutus = "10db2648-50ef-49bd-9477-c1b55d74eda0"
 CassetteOverlay = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
+Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
 Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
+LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 MLIR = "bfde9dd4-8f40-4a1e-be09-1475335e1c92"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
