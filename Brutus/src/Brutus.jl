@@ -18,7 +18,7 @@ IR.MLIRType(::Type{Nothing}) = IR.MLIRType(API.mlirLLVMVoidTypeGet(IR.context())
 
 struct InstructionContext{I}
     args::Vector
-    result_type::Type
+    result_type::Union{Type, Core.Const}
     loc::Location
 end
 
@@ -98,14 +98,19 @@ function emit(cg::CodegenContext, ic::InstructionContext{Base.getfield})
 end
 function emit(cg::CodegenContext, ic::InstructionContext{Core.tuple})
     inputs = get_value.(Ref(cg), ic.args)
-    outputs = IR.get_type.(inputs)
-    
-    op = push!(currentblock(cg), builtin.unrealized_conversion_cast(
-        inputs;
-        outputs,
-        location=ic.loc
-    ))
-    return cg, Tuple(IR.get_result.(Ref(op), 1:fieldcount(ic.result_type)))
+    if all(IR.MLIRValueTrait.(typeof.(inputs)) .== Ref(IR.Convertible))
+        outputs = MLIRType.(typeof.(inputs))
+        op = push!(currentblock(cg), builtin.unrealized_conversion_cast(
+            inputs;
+            outputs,
+            location=ic.loc
+        ))
+        return cg, Tuple(typeof(inputs[i])(IR.get_result(op, i)) for i in 1:fieldcount(ic.result_type))
+    else    
+        # If there are non-convertible types in the IR, the operation can't be emitted.
+        # This doesn't necessarily lead to an error, as long as the tuple values are not used in emitted MLIR. 
+        return cg, Tuple(inputs)
+    end
 end
 function emit(cg::CodegenContext, ic::InstructionContext{Core.ifelse})
     T = get_type(cg, ic.args[2])
@@ -233,6 +238,11 @@ function unpack(::IR.NonConvertible, T)
     return unpacked
 end
 
+@generated function unsafe_new(::Type{T}, args...) where T
+    args = :args
+    return :(Core._apply_iterate(Base.iterate, T, args))
+end
+
 """
     code_mlir(f, types::Type{Tuple}) -> IR.Operation
 
@@ -244,13 +254,14 @@ This only supports a few Julia Core primitives and scalar types of type $BrutusT
     handful of primitives. A better to perform this conversion would to create a dialect
     representing Julia IR and progressively lower it to base MLIR dialects.
 """
-function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns=emit_region)
+function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=false, ignore_returns=emit_region)
     ctx = context()
     ir, ret = Core.Compiler.code_ircode(f, types) |> only
     @assert first(ir.argtypes) isa Core.Const
 
+    types = ir.argtypes[begin+1:end]
     values = Vector(undef, length(ir.stmts))
-    args = Vector(undef, length(types.parameters))
+    args = Vector(undef, length(types))
     for dialect in ("func", "cf")
         IR.get_or_load_dialect!(dialect)
     end
@@ -271,7 +282,7 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
         values,
         args
     ) do cg
-        for (i, argtype) in enumerate(types.parameters)
+        for (i, argtype) in enumerate(types)
             args = []
             for t in unpack(argtype)
                 arg = IR.push_argument!(cg.entryblock, MLIRType(t), Location())
@@ -365,26 +376,24 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
 
 
                 elseif inst isa PhiNode
-                    values[sidx] = IR.get_argument(currentblock(cg), n_phi_nodes += 1)
+                    values[sidx] = stmt[:type](IR.get_argument(currentblock(cg), n_phi_nodes += 1))
                 elseif inst isa PiNode
                     values[sidx] = get_value(values, inst.val)
                 elseif inst isa GotoNode
-                    args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.label))...]
+                    args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.label))...]
                     dest = cg.blocks[inst.label]
                     loc = Location(string(line.file), line.line, 0)
                     push!(currentblock(cg), cf.br(args; dest, location=loc))
                 elseif inst isa GotoIfNot
-                    false_args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.dest))...]
+                    false_args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.dest))...]
                     cond = get_value(cg, inst.cond)
                     @assert length(bb.succs) == 2 # NOTE: We assume that length(bb.succs) == 2, this might be wrong
                     trueDest = setdiff(bb.succs, inst.dest) |> only
-                    true_args = Value[get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, trueDest))...]
+                    true_args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, trueDest))...]
                     trueDest = cg.blocks[trueDest]
                     falseDest = cg.blocks[inst.dest]
 
                     location = Location(string(line.file), line.line, 0)
-                    # @show cond
-                    # if inst.cond.id == 54; return 1; end
                     cond_br = cf.cond_br(cond, true_args, false_args; trueDest, falseDest, location)
                     push!(currentblock(cg), cond_br)
                 elseif inst isa ReturnNode
@@ -404,7 +413,7 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                     push!(currentblock(cg), func.return_(returnvalue; location=loc))
                 elseif Meta.isexpr(inst, :new)
                     args = get_value.(Ref(cg), inst.args[2:end])
-                    values[sidx] = reinterpret(inst.args[1], Tuple(args))
+                    values[sidx] = unsafe_new(inst.args[1], args)
                 elseif Meta.isexpr(inst, :code_coverage_effect)
                     # Skip
                 elseif Meta.isexpr(inst, :boundscheck)
@@ -423,14 +432,12 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                 end
             end
         end
-        
-        func_name = nameof(f)
-        
+                
         # add fallthrough to next block if necessary
         for (i, b) in enumerate(cg.blocks)
             if (i != length(cg.blocks) && IR.mlirIsNull(API.mlirBlockGetTerminator(b)))
                 @warn "Block $i did not have a terminator, adding one."
-                args = []
+                args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, i, i+1))...]
                 dest = cg.blocks[i+1]
                 loc = IR.Location()
                 push!(b, cf.br(args; dest, location=loc))
@@ -454,7 +461,7 @@ function code_mlir(f, types; do_simplify=true, emit_region=false, ignore_returns
                 "func.func",
                 Location();
                 attributes = [
-                    NamedAttribute("sym_name", IR.Attribute(string(func_name))),
+                    NamedAttribute("sym_name", IR.Attribute(string(fname))),
                     NamedAttribute("function_type", IR.Attribute(ftype)),
                     NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
                 ],
