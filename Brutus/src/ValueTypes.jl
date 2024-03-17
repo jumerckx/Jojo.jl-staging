@@ -4,7 +4,7 @@ export memref, i1, i8, i16, i32, i64, f32, f64, index, tensor
 
 using MLIR
 using MLIR.IR: Value, Attribute, MLIRType, get_value, get_result, Operation, Convertible
-using MLIR.API: mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize
+using MLIR.API: mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet
 import MLIR.IR: MLIRValueTrait
 
 abstract type MLIRArrayLike{T, N} <: AbstractArray{T, N} end
@@ -54,12 +54,13 @@ struct MLIRF64 <: MLIRFloat
     value::Value
 end
 const f64 = MLIRF64
+MLIR.IR.MLIRType(::Type{MLIRF64}) = mlirF64TypeGet(MLIR.IR.context())
 
 struct MLIRF32 <: MLIRFloat
     value::Value
 end
 const f32 = MLIRF32
-
+MLIR.IR.MLIRType(::Type{MLIRF32}) = mlirF32TypeGet(MLIR.IR.context())
 
 struct MLIRIndex <: Integer
     value::Value

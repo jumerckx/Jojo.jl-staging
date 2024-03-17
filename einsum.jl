@@ -3,6 +3,7 @@ includet("utils.jl")
 using Brutus
 import Brutus: MemRef, @mlirfunction, @code_mlir
 using Brutus.Types
+using Brutus.Types: MLIRFloat
 using BenchmarkTools, MLIR, MacroTools
 
 using MLIR.Dialects: arith, index, linalg, transform, builtin
@@ -15,6 +16,11 @@ ctx = IR.Context()
 registerAllDialects!();
 API.mlirRegisterAllPasses()
 API.mlirRegisterAllLLVMTranslations(ctx.context)
+
+@mlirfunction (Base.:+(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.addf(a, b) |> IR.get_result)
+@mlirfunction (Base.:-(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.subf(a, b) |> IR.get_result)
+@mlirfunction (Base.:*(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.mulf(a, b) |> IR.get_result)
+@mlirfunction (Base.:/(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.divf(a, b) |> IR.get_result)
 
 @mlirfunction Base.:+(a::i64, b::i64)::i64 = i64(arith.addi(a, b))
 @mlirfunction Base.:-(a::i64, b::i64)::i64 = i64(arith.subi(a, b))
@@ -76,7 +82,7 @@ function maps(output_indices, inputs_indices)
             collect(exprs)
         ) |> IR.AffineMap
     end
-    indexing_maps = IR.AffineMap[get_map(output_indices), get_map.(inputs_indices)...]
+    indexing_maps = IR.AffineMap[get_map.(inputs_indices)..., get_map(output_indices)]
 
     iterator_types = IR.ArrayAttribute(iterator_types)
     indexing_maps = IR.Attribute.(API.mlirAffineMapAttrGet.(indexing_maps)) |> IR.ArrayAttribute
@@ -110,15 +116,50 @@ end
     return tensor{T, 2}(IR.get_result(op))
 end
 
-@time Brutus.code_mlir(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B, C
-    f = Einsum(((:i, :k), (:k, :j), (:i, :j))=>(:i, :j))
-    f(Y, A, B, C)
+Brutus.code_mlir(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
+    f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
+    f(Y, A, B)
 end
+
+# f(Y, A, B) = Einsum(((:i, :k), (:k, :j))=>(:i, :j))(Y, A, B)
+# Brutus.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}})
 
 Base.code_ircode(
         (args)->linalgyield(args[end]+prod(args[1:end-1])),
         Tuple{Tuple{eltype(tensor{i64}), eltype.((tensor{i64}, tensor{i64}))...}}
     )
+
+###########################################################################
+
+Base.promote_rule(::Type{T}, ::Type{I}) where {T<:Brutus.Types.MLIRInteger, I<:Integer} = T
+
+@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T <: Brutus.Types.MLIRInteger}
+    op = arith.constant(value=Attribute(x), result=MLIRType(T))
+    T(IR.get_result(op))
+end
+
+Brutus.code_mlir(Tuple{i64}) do a
+    a+2
+end
+
+
+Base.promote_rule(::Type{Brutus.Types.MLIRIndex}, ::Type{I}) where {I<:Integer} = Brutus.Types.MLIRIndex
+
+@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T<:Brutus.Types.MLIRIndex}
+    op = index.constant(value=Attribute(x, IR.IndexType()), result=MLIRType(T))
+    T(IR.get_result(op))
+end
+@mlirfunction function Base.:+(a::T, b::T)::T where {T<:Brutus.Types.MLIRIndex}
+    T(IR.get_result(index.add(a, b)))
+end
+
+Brutus.code_mlir(Tuple{i64, Types.index}) do a, b
+    (a+2, b+1)
+end
+
+Base.code_ircode(Tuple{i64, Types.index}) do a, b
+    (a+2, b+1)
+end
 
 ###########################################################################
 
@@ -134,7 +175,12 @@ Base.promote_rule(::Type{Brutus.Types.MLIRInteger{A}}, y::Type{Brutus.Types.MLIR
     T(IR.get_result(op))
 end
 
-Brutus.code_mlir(Tuple{tensor{i32, 2}, tensor{i16, 2}, tensor{i16, 2}}) do Y, A, B
+Base.code_ircode(Tuple{tensor{f64, 2}, tensor{f64, 2}, tensor{f64, 2}}) do Y, A, B
+    f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
+    f(Y, A, B)
+end
+
+op() = Brutus.code_mlir(Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}}, fname="f") do Y, A, B
     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
     f(Y, A, B)
 end

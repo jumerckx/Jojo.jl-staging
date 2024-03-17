@@ -338,16 +338,12 @@ pm = lowerModuleToLLVM(mod)
 
 addr = jit(mod; opt=3)("_mlir_ciface_f")
 
-a = ones(Int64, 4, 3)
-b = ones(Int64, 3, 4) .* 2
+a = rand(Int64, 4, 3)
+b = rand(Int64, 3, 4) .* 2
 y = similar(a, (4, 4)) .* 0
-
-a_, b_, y_ = ReturnType(a, (3, 2)), ReturnType(b, (2, 3)), ReturnType(y, (3, 3))
 
 a_, b_, y_ = MemRef.([a, b, y])
 @ccall $addr(y_::Ref{MemRef}, a_::Ref{MemRef}, b_::Ref{MemRef})::Int
-
-@ccall $addr(y_::Ref{ReturnType}, a_::Ref{ReturnType}, b_::Ref{ReturnType})::Int
 
 @show y
 
