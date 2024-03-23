@@ -2,7 +2,7 @@
 using MLIR
 includet("utils.jl")
 using MLIR: IR, API
-using MLIR.IR: Value, MLIRType, NamedAttribute, Location
+using MLIR.IR: Value, NamedAttribute, Location
 using MLIR.Dialects: arith, cf
 ctx = IR.Context()
 registerAllDialects!();
@@ -11,7 +11,7 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 
 import MLIR.Dialects: linalg, arith, transform
 
-mod = IR.parse(IR.MModule, """
+mod = IR.parse(IR.Module, """
 !T = f64
 !matrix_type_A = tensor<1024x1024x!T>
 !matrix_type_B = tensor<1024x1024x!T>
@@ -94,20 +94,20 @@ iterator_types = IR.ArrayAttribute(parse.(Ref(IR.Attribute), [
   "#linalg.iterator_type<reduction>"]))
 
 dummy = IR.Block()
-TensorType = parse(IR.MLIRType, "tensor<?x?xf64>")
-a = IR.push_argument!(dummy, TensorType, IR.Location())
-b = IR.push_argument!(dummy, TensorType, IR.Location())
-c = IR.push_argument!(dummy, TensorType, IR.Location())
+TensorType = parse(IR.Type, "tensor<?x?xf64>")
+a = IR.push_argument!(dummy, TensorType)
+b = IR.push_argument!(dummy, TensorType)
+c = IR.push_argument!(dummy, TensorType)
 
-# a = IR.push_argument!(dummy, IR.MLIRType(Array{Float64, 2}), IR.Location())
-# b = IR.push_argument!(dummy, IR.MLIRType(Array{Float64, 2}), IR.Location())
-# c = IR.push_argument!(dummy, IR.MLIRType(Array{Float64, 2}), IR.Location())
+# a = IR.push_argument!(dummy, IR.Type(Array{Float64, 2}))
+# b = IR.push_argument!(dummy, IR.Type(Array{Float64, 2}))
+# c = IR.push_argument!(dummy, IR.Type(Array{Float64, 2}))
 
 matmul_block = IR.Block()
-a_el, b_el, c_el = IR.push_argument!.(Ref(matmul_block), [IR.MLIRType(Float64) for _ in 1:3], Ref(IR.Location()))
+a_el, b_el, c_el = IR.push_argument!.(Ref(matmul_block), [IR.Type(Float64) for _ in 1:3])
 
-d = IR.get_result(push!(matmul_block, arith.mulf(a_el, b_el)))
-e = IR.get_result(push!(matmul_block, arith.addf(c_el, d)))
+d = IR.result(push!(matmul_block, arith.mulf(a_el, b_el)))
+e = IR.result(push!(matmul_block, arith.addf(c_el, d)))
 push!(matmul_block, linalg.yield([e]));
 
 matmul_region = IR.Region()
@@ -116,8 +116,8 @@ push!(matmul_region, matmul_block)
 mm = push!(dummy, linalg.generic(
   [a, b],
   [c];
-  # result_tensors=IR.MLIRType[],
-  result_tensors=IR.MLIRType[TensorType],
+  # result_tensors=IR.Type[],
+  result_tensors=IR.Type[TensorType],
   indexing_maps,
   iterator_types,
   region=matmul_region
@@ -151,7 +151,7 @@ typeof(x)
 
 # f(x)
 
-parse(IR.MModule, """
+parse(IR.Module, """
 module attributes {transform.with_named_sequence} {
   transform.named_sequence @__transform_main(%module_op: !transform.any_op {transform.readonly}) {
     %matmul = transform.structured.match ops{["linalg.matmul"]} in %module_op
@@ -179,16 +179,16 @@ module attributes {transform.with_named_sequence} {
 
 transform_body = IR.Region()
 b0 = push!(transform_body, IR.Block())
-any_op = IR.push_argument!(b0, IR.MLIRType(IR.parse(IR.MLIRType, "!transform.any_op")), IR.Location())
+any_op = IR.push_argument!(b0, IR.Type(IR.parse(IR.Type, "!transform.any_op")))
 
-matched_op = push!(b0, transform.structured_match(any_op, results=parse(IR.MLIRType, "!transform.op<\"linalg.generic\">"), ops=IR.ArrayAttribute([IR.Attribute("linalg.generic")]))) |> IR.get_result
+matched_op = push!(b0, transform.structured_match(any_op, results=parse(IR.Type, "!transform.op<\"linalg.generic\">"), ops=IR.ArrayAttribute([IR.Attribute("linalg.generic")]))) |> IR.result
 
 
 # transform.named_sequence(
 #   body=transform_body,
 #   sym_name=IR.Attribute("__transform_main"),
-#   function_type=IR.Attribute(IR.MLIRType((parse(IR.MLIRType, "!transform.any_op"), )=>())),
+#   function_type=IR.Attribute(IR.Type((parse(IR.Type, "!transform.any_op"), )=>())),
 #   arg_attrs=IR.ArrayAttribute([parse(IR.Attribute, "{transform.readonly}")]),
 # )
 
-IR.MLIRType((parse(IR.MLIRType, "!transform.any_op"), )=>())
+IR.Type((parse(IR.Type, "!transform.any_op"), )=>())

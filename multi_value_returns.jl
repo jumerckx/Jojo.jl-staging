@@ -30,7 +30,7 @@ f(a, b) = a*b
 
 Base.code_ircode(f, Tuple{Complex{i64}, Complex{i64}})
 op = Brutus.code_mlir(f, Tuple{Complex{i64}, Complex{i64}})
-mod = IR.MModule()
+mod = IR.Module()
 push!(IR.get_body(mod), op)
 lowerModuleToLLVM(mod)
 addr_f = jit(mod; opt=3)("_mlir_ciface_f")
@@ -50,7 +50,7 @@ g(a, b) = Point(a, a+b)
 Base.code_ircode(g, Tuple{Complex{i64}, Complex{i64}})
 op = Brutus.code_mlir(g, Tuple{Complex{i64}, Complex{i64}})
 
-mod = IR.MModule()
+mod = IR.Module()
 push!(IR.get_body(mod), op)
 lowerModuleToLLVM(mod)
 addr_g = jit(mod; opt=3)("_mlir_ciface_g")

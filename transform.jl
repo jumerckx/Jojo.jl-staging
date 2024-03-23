@@ -16,27 +16,27 @@ struct AnyOp
     value::IR.Value
 end
 IR.MLIRValueTrait(::Type{<:AnyOp}) = IR.Convertible()
-IR.MLIRType(::Type{AnyOp}) = IR.MLIRType(IR.parse(IR.MLIRType, "!transform.any_op"))
+IR.Type(::Type{AnyOp}) = IR.Type(IR.parse(IR.Type, "!transform.any_op"))
 
 @mlirfunction function structured_match(parent::AnyOp, name::String)::AnyOp
-    return IR.get_result(transform.structured_match(
+    return IR.result(transform.structured_match(
         parent;
-        results=IR.MLIRType(AnyOp),
+        results=IR.Type(AnyOp),
         ops = IR.ArrayAttribute([IR.Attribute(name)])
     )) |> AnyOp
 end
 @mlirfunction function structured_tile_using_for(op::AnyOp, tilesizes::NTuple{N, Int})::AnyOp where N
-    loops = fill(IR.MLIRType(AnyOp), count(tilesizes != 0))
+    loops = fill(IR.Type(AnyOp), count(tilesizes != 0))
     static_sizes = IR.Attribute(API.mlirDenseI64ArrayGet(IR.context(), length(tilesizes), [tilesizes...]))
     scalable_sizes = IR.Attribute(API.mlirDenseBoolArrayGet(IR.context(), length(tilesizes), fill(Int32(false), length(tilesizes))))
     op = transform.structured_tile_using_for(
         op, [];
-        tiled_linalg_op = IR.MLIRType(AnyOp),
+        tiled_linalg_op = IR.Type(AnyOp),
         loops,
         static_sizes,
         scalable_sizes
     )
-    return AnyOp(IR.get_result(op, 1))
+    return AnyOp(IR.result(op, 1))
 end
 @mlirfunction function yield(results::NTuple{N})::Nothing where N
     transform.yield(collect(results))
@@ -52,22 +52,21 @@ end
         sym_name=name,
 # not working because collect throws an error in CassetteOverlay
 # https://github.com/JuliaDebug/CassetteOverlay.jl/issues/39
-        # function_type=IR.MLIRType((AnyOp, )=>())
+        # function_type=IR.Type((AnyOp, )=>())
 
-        function_type=IR.MLIRType(API.mlirFunctionTypeGet(IR.context(),
-            1, [IR.MLIRType(AnyOp)],
+        function_type=IR.Type(API.mlirFunctionTypeGet(IR.context(),
+            1, [IR.Type(AnyOp)],
             0, []))
     )
     nothing
 end
 
 @mlirfunction function apply_registered_pass(target; pass_name)::AnyOp
-    AnyOp(IR.get_result(transform.apply_registered_pass(target; result=IR.MLIRType(AnyOp), pass_name)))
+    AnyOp(IR.result(transform.apply_registered_pass(target; result=IR.Type(AnyOp), pass_name)))
 end
 
 @mlirfunction function match(root, op_names)::Op
-    @warn "ttest!!!!"
-    op = IR.get_result(transform.match_operation_name(root; op_names=IR.ArrayAttribute(collect(IR.Attribute.(op_names)))))
+    op = IR.result(transform.match_operation_name(root; op_names=IR.ArrayAttribute(collect(IR.Attribute.(op_names)))))
     return AnyOp(op)
 end
 

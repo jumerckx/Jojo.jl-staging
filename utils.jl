@@ -1,6 +1,9 @@
 using InteractiveUtils, CassetteOverlay
 using MLIR: IR, API
 
+const mlir_runner_utils = joinpath(splitpath(MLIR.API.MLIR_jll.mlir_c)[1:end-1]..., "libmlir_runner_utils.so")
+const mlir_c_runner_utils = joinpath(splitpath(MLIR.API.MLIR_jll.mlir_c)[1:end-1]..., "mlir/lib/libmlir_c_runner_utils.so")
+
 macro code_ircode(ex0...)
     thecall = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(@__MODULE__, :(Base.code_ircode), ex0)
     quote
@@ -22,17 +25,17 @@ function registerAllDialects!()
     return registry
 end
 
-function mlir_opt(mod::IR.MModule, pipeline::String)
+function mlir_opt(mod::IR.Module, pipeline::String)
     pm = IR.PassManager()
     IR.add_pipeline!(MLIR.IR.OpPassManager(pm), pipeline)
-    status = API.mlirPassManagerRunOnOp(pm, IR.get_operation(mod).operation)
+    status = API.mlirPassManagerRunOnOp(pm, IR.Operation(mod).operation)
     if status.value == 0
         error("Unexpected failure running pass failure")
     end
     return mod
 end
 
-function lowerModuleToLLVM(mod::IR.MModule)
+function lowerModuleToLLVM(mod::IR.Module)
     pm = IR.PassManager()
 
     IR.add_pipeline!(
@@ -50,7 +53,7 @@ function lowerModuleToLLVM(mod::IR.MModule)
     # IR.add_owned_pass!(pm, API.mlirCreateConversionArithToLLVMConversionPass())
     # IR.add_owned_pass!(pm, API.mlirCreateConversionConvertIndexToLLVMPass())
     IR.add_owned_pass!(pm, API.mlirCreateConversionReconcileUnrealizedCasts())
-    status = API.mlirPassManagerRunOnOp(pm, IR.get_operation(mod).operation)
+    status = API.mlirPassManagerRunOnOp(pm, IR.Operation(mod).operation)
 
     if status.value == 0
         error("Unexpected failure running pass failure")
@@ -58,7 +61,7 @@ function lowerModuleToLLVM(mod::IR.MModule)
     return mod
 end
 
-function lowerModuleToNVVM(mod::IR.MModule)
+function lowerModuleToNVVM(mod::IR.Module)
     pm = IR.PassManager()
 
     pm_func = API.mlirPassManagerGetNestedUnder(pm, "func.func")
@@ -100,8 +103,8 @@ function lowerModuleToNVVM(mod::IR.MModule)
     return mod
 end
   
-function jit(mod::IR.MModule; opt=0)
-    paths = Base.unsafe_convert.(Ref(API.MlirStringRef), [MLIR.API.mlir_c_runner_utils, MLIR.API.mlir_runner_utils])
+function jit(mod::IR.Module; opt=0)
+    paths = Base.unsafe_convert.(Ref(API.MlirStringRef), [mlir_c_runner_utils, mlir_runner_utils])
     jit = API.mlirExecutionEngineCreate(
         mod,
         opt,
@@ -118,7 +121,7 @@ function jit(mod::IR.MModule; opt=0)
 end
 
 function jit(op::IR.Operation; opt=0)
-    mod = IR.MModule(IR.Location())
+    mod = IR.Module(IR.Location())
     push!(IR.get_body(mod), op)
     lowerModuleToLLVM(mod)
     jit(mod; opt)

@@ -8,7 +8,7 @@ using BenchmarkTools, MLIR, MacroTools
 using MLIR.Dialects: arith, index, linalg, transform, builtin
 using MLIR.Dialects
 using MLIR.IR
-using MLIR.AffineUtils
+using MLIR.IR: @affinemap
 
 using MLIR: IR, API
 ctx = IR.Context()
@@ -22,17 +22,17 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 @mlirfunction Base.:-(a::i64, b::i64)::i64 = i64(arith.subi(a, b))
 @mlirfunction Base.:*(a::i64, b::i64)::i64 = i64(arith.muli(a, b))
 @mlirfunction Base.:/(a::i64, b::i64)::i64 = i64(arith.divsi(a, b))
-@mlirfunction Base.:>(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
-@mlirfunction Base.:>=(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
+@mlirfunction Base.:>(a::i64, b::i64)::i1 = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
+@mlirfunction Base.:>=(a::i64, b::i64)::i1 = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
 @mlirfunction function Base.getindex(A::memref{T}, i::Int)::T where T
     # this method can only be called with constant i since we assume arguments to `code_mlir` to be MLIR types, not Julia types.
-    i = Types.index(index.constant(; value=Attribute(i, IR.IndexType())) |> IR.get_result)
+    i = Types.index(index.constant(; value=Attribute(i, IR.IndexType())) |> IR.result)
     A[i]
 end
 @mlirfunction function Base.getindex(A::memref{T, 1}, i::Types.index)::T where T
-    oneoff = index.constant(; value=Attribute(1, IR.IndexType())) |> IR.get_result
-    new_index = arith.subi(i, oneoff) |> IR.get_result
-    T(Dialects.memref.load(A, [new_index]) |> IR.get_result)
+    oneoff = index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
+    new_index = arith.subi(i, oneoff) |> IR.result
+    T(Dialects.memref.load(A, [new_index]) |> IR.result)
 end
 
 square(a) = a*a
@@ -40,7 +40,10 @@ f(a, b) = (a>b) ? a+b : square(a)
 g(a::AbstractVector) = a[2]
 h(a, i) = a[i]
 
-Base.code_ircode(f, (i64, i64))
+Brutus.BoolTrait(::Type{<: i1}) = Brutus.Boollike()
+empty!(Brutus.global_ci_cache)
+
+Base.code_ircode(f, (i64, i64), interp=Brutus.MLIRInterpreter())
 @time op_f = Brutus.code_mlir(f, Tuple{i64, i64})
 @assert IR.verify(op_f)
 
@@ -48,8 +51,8 @@ Base.code_ircode(f, (i64, i64))
 
 # To run the code, we need to first:
 #   put the operation in a MLIR module:
-mod_f = IR.MModule(IR.Location())
-push!(IR.get_body(mod_f), op_f);
+mod_f = IR.Module(IR.Location())
+push!(IR.body(mod_f), op_f);
 
 #   lower all MLIR dialects to the llvm dialect:
 pm_f = lowerModuleToLLVM(mod_f)
@@ -62,7 +65,7 @@ addr_f = jit(mod_f; opt=3)("_mlir_ciface_f")
 
 #endregion
 
-Base.code_ircode(g, (memref{i64, 1},))
+Base.code_ircode(g, (memref{i64, 1},), interp=Brutus.MLIRInterpreter())
 op_g = Brutus.code_mlir(g, Tuple{memref{i64, 1}})
 IR.verify(op_g)
 
@@ -71,8 +74,8 @@ IR.verify(op_h)
 
 #region Running the code
 
-mod_h = IR.MModule(IR.Location())
-push!(IR.get_body(mod_h), op_h);
+mod_h = IR.Module(IR.Location())
+push!(IR.body(mod_h), op_h);
 
 pm_h = lowerModuleToLLVM(mod_h)
 
@@ -86,7 +89,7 @@ a = [42, 43, 44]
 
 ################################################################################################
 
-using MLIR: AffineUtils
+using MLIR.IR: @affinemap
 
 @mlirfunction function linalgyield(x::T)::Nothing where {T}
     linalg.yield([x])
@@ -96,23 +99,23 @@ end
 import LinearAlgebra.mul!
 @mlirfunction function mul!(Y::tensor{T, 2}, A::tensor{T, 2}, B::tensor{T, 2})::tensor{T, 2} where T
     indexing_maps = [
-        (AffineUtils.@map (m, n, k)[] -> (m, k)),
-        (AffineUtils.@map (m, n, k)[] -> (k, n)),
-        (AffineUtils.@map (m, n, k)[] -> (m, n))
+        (@affinemap (m, n, k)[] -> (m, k)),
+        (@affinemap (m, n, k)[] -> (k, n)),
+        (@affinemap (m, n, k)[] -> (m, n))
         ]
-    indexing_maps = IR.Attribute.(API.mlirAffineMapAttrGet.(indexing_maps)) |> IR.ArrayAttribute
+    indexing_maps = IR.Attribute.(API.mlirAffineMapAttrGet.(indexing_maps)) |> IR.Attribute
     iterator_types = IR.Attribute[parse(IR.Attribute, "#linalg.iterator_type<$type>") for type in ["parallel", "parallel", "reduction"]]
-    iterator_types = IR.ArrayAttribute(iterator_types)
+    iterator_types = IR.Attribute(iterator_types)
     matmul_region = @nonoverlay Brutus.code_mlir((a, b, y)->linalgyield(y+(a*b)), Tuple{T, T, T}; emit_region=true, ignore_returns=true)
     op = linalg.generic(
         [A, B],
         [Y],
-        result_tensors=MLIRType[MLIRType(typeof(Y))];
+        result_tensors=IR.Type[IR.Type(typeof(Y))];
         indexing_maps,
         iterator_types,
         region=matmul_region
     )
-    return tensor{T, 2}(IR.get_result(op))
+    return tensor{T, 2}(IR.result(op))
 end
 
 f(Y, A, B) = begin
@@ -127,18 +130,18 @@ op = Brutus.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}, 
 ################################################################################################
 
 b = IR.Block()
-arg1 = IR.push_argument!(b, parse(IR.MLIRType, "!transform.any_op"), IR.Location())
+arg1 = IR.push_argument!(b, parse(IR.Type, "!transform.any_op"))
 
 matched = transform.structured_match(
     arg1;
-    results = parse(IR.MLIRType, "!transform.any_op"),
-    ops = IR.ArrayAttribute([Attribute("linalg.generic")])
+    results = parse(IR.Type, "!transform.any_op"),
+    ops = IR.Attribute([Attribute("linalg.generic")])
 )
 @show matched
 tiled = transform.structured_tile_using_for(
-    IR.get_result(matched), [];
-    tiled_linalg_op=parse(IR.MLIRType, "!transform.any_op"),
-    loops = [parse(IR.MLIRType, "!transform.any_op") for _ in 1:3],
+    IR.result(matched), [];
+    tiled_linalg_op=parse(IR.Type, "!transform.any_op"),
+    loops = [parse(IR.Type, "!transform.any_op") for _ in 1:3],
     static_sizes=IR.Attribute(API.mlirDenseI64ArrayGet(IR.context(), 3, [2, 3, 4])),
     scalable_sizes=IR.Attribute(API.mlirDenseBoolArrayGet(IR.context(), 3, Int32[false, false, false]))
 )
@@ -151,7 +154,7 @@ push!(body, b)
 
 ns = transform.named_sequence(;
     sym_name=Attribute("__transform_main"),
-    function_type=MLIRType((parse(MLIRType, "!transform.any_op"),)=>()),
+    function_type=IR.FunctionType([parse(IR.Type, "!transform.any_op")], []),
     body
 )
 
@@ -161,15 +164,15 @@ push!(b_module, ns)
 push!(b_module, op)
 push!(bodyRegion, b_module)
 mod_op = builtin.module_(;
-    additional_attributes=[NamedAttribute("transform.with_named_sequence", IR.Attribute(API.mlirUnitAttrGet(IR.context())))],
+    additional_attributes=[IR.NamedAttribute("transform.with_named_sequence", IR.Attribute(API.mlirUnitAttrGet(IR.context())))],
     bodyRegion
 )
 
-mod = MModule(mod_op)
+mod = IR.Module(mod_op)
 
 # mlir_opt(mod, "one-shot-bufferize{bufferize-function-boundaries=true}")
 mlir_opt(mod, "transform-interpreter")
-mlir_opt(mod, "test-transform-dialect-erase-schedule")
+# mlir_opt(mod, "test-transform-dialect-erase-schedule")
 # mlir_opt(mod, "one-shot-bufferize{function-boundary-type-conversion=infer-layout-map bufferize-function-boundaries}, expand-realloc, ownership-based-buffer-deallocation, canonicalize, buffer-deallocation-simplification, bufferization-lower-deallocations, cse, canonicalize")
 mlir_opt(mod, "convert-linalg-to-loops")
 mlir_opt(mod, "
@@ -207,7 +210,7 @@ y_ ≈ a_*b_
 
 ################################################################################################
 
-mod = parse(IR.MModule, """
+mod = parse(IR.Module, """
 llvm.func @f(%arg0: !llvm.ptr, %arg1: !llvm.ptr, %arg2: i64, %arg3: i64, %arg4: i64, %arg5: i64, %arg6: i64, %arg7: !llvm.ptr, %arg8: !llvm.ptr, %arg9: i64, %arg10: i64, %arg11: i64, %arg12: i64, %arg13: i64, %arg14: !llvm.ptr, %arg15: !llvm.ptr, %arg16: i64, %arg17: i64, %arg18: i64, %arg19: i64, %arg20: i64) -> !llvm.struct<(ptr, ptr, i64, array<2 x i64>, array<2 x i64>)> attributes {llvm.emit_c_interface} {
     %0 = llvm.mlir.constant(1 : index) : i64
     %1 = llvm.mlir.constant(0 : index) : i64
@@ -293,7 +296,7 @@ llvm.func @_mlir_ciface_f(%arg0: !llvm.ptr, %arg1: !llvm.ptr, %arg2: !llvm.ptr, 
 }
 """)
 
-mod = parse(IR.MModule, """
+mod = parse(IR.Module, """
 #map = affine_map<(d0, d1, d2) -> (d0, d2)>
 #map1 = affine_map<(d0, d1, d2) -> (d2, d1)>
 #map2 = affine_map<(d0, d1, d2) -> (d0, d1)>
@@ -388,7 +391,7 @@ schedules = [
 ]
 
 function mlir_bench(schedule::String)
-    mod = parse(IR.MModule, """
+    mod = parse(IR.Module, """
     #map = affine_map<(d0, d1, d2) -> (d0, d2)>
     #map1 = affine_map<(d0, d1, d2) -> (d2, d1)>
     #map2 = affine_map<(d0, d1, d2) -> (d0, d1)>
@@ -442,7 +445,7 @@ end
 
 ################################################################################################
 
-@mlirfunction i64(i::Int)::i64 = i64(arith.constant(value=i) |> IR.get_result)
+@mlirfunction i64(i::Int)::i64 = i64(arith.constant(value=i) |> IR.result)
 
 function f(a::AbstractArray)
     s = eltype(a)(0)
@@ -459,7 +462,7 @@ Base.code_ircode(:, (Int, Int))
 
 ################################################################################################
 
-mod = parse(IR.MModule, """
+mod = parse(IR.Module, """
 func.func @f(%arg0: memref<?x?xi64, strided<[?, ?], offset: ?>>, %arg1: memref<?x?xi64, strided<[?, ?], offset: ?>>, %arg2: memref<?x?xi64, strided<[?, ?], offset: ?>>) -> i64 attributes {llvm.emit_c_interface} {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index

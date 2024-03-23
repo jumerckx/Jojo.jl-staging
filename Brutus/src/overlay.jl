@@ -41,14 +41,14 @@ function mlirfunction_(expr)
     methodtable = gensym(:MLIRCompilation)
 
     # hacky: in the MLIRCompilation context, we get rid of the return type as this could be something else than what should be in the Julia IR.
-    delete!(dict, :rtype)
+    # delete!(dict, :rtype)
     expr = Base.Experimental.overlay_def!(methodtable, combinedef(dict))
 
     return quote
         $(esc(methodtable)) = MLIRCompilation
 
         @noinline function $(esc(dict[:name]))($(esc.(dict[:args])...); $(esc.(dict[:kwargs])...))::$(esc(rtype)) where {$(esc.(dict[:whereparams])...)}
-            new_intrinsic()
+            new_intrinsic()::$(esc(rtype))
         end
 
         $(esc(expr))

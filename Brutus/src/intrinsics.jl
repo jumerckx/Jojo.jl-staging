@@ -1,4 +1,4 @@
-new_intrinsic = ()->Base.compilerbarrier(:const, error("Intrinsics should be compiled to MLIR!"))
+@noinline new_intrinsic()::T where T = Base.inferencebarrier(true) && error("Intrinsics should be compiled to MLIR!")
 
 @noinline begin_for(start::Integer, stop::Integer) =  new_intrinsic()::Int
 @noinline begin_for(result::T, start::Integer, stop::Integer) where T = new_intrinsic()::Tuple{Int, T}

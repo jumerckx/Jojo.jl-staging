@@ -2,19 +2,18 @@ module Brutus
 
 using MLIR.IR
 using MLIR: API
-using MLIR.Dialects: arith, func, cf, memref, index, builtin, llvm
+using MLIR.Dialects: arith, func, cf, memref, index, builtin, llvm, ub
 using Core: PhiNode, GotoNode, GotoIfNot, SSAValue, Argument, ReturnNode, PiNode
 
 const BrutusScalarType = Union{Bool, Int64, UInt64, Int32, UInt32, Float16, Float32, Float64, UInt64}
 const BrutusType = Union{BrutusScalarType, Array{BrutusScalarType}}
 
 include("intrinsics.jl")
+include("abstract.jl")
 include("pass.jl")
 include("overlay.jl")
 include("codegencontext.jl")
 include("ValueTypes.jl")
-
-IR.MLIRType(::Type{Nothing}) = IR.MLIRType(API.mlirLLVMVoidTypeGet(IR.context()))
 
 struct InstructionContext{I}
     args::Vector
@@ -29,7 +28,7 @@ function cmpi_pred(predicate)
 end
 
 function single_op_wrapper(fop)
-    (cg::CodegenContext, ic::InstructionContext)->IR.get_result(push!(currentblock(cg), fop(indextoi64.(Ref(cg), get_value.(Ref(cg), ic.args))...)))
+    (cg::CodegenContext, ic::InstructionContext)->IR.result(push!(currentblock(cg), fop(indextoi64.(Ref(cg), get_value.(Ref(cg), ic.args))...)))
 end
 
 indextoi64(cg::CodegenContext, x; loc=IR.Location()) = x
@@ -38,8 +37,8 @@ function indextoi64(cg::CodegenContext, x::Value; loc=IR.Location())
     if API.mlirTypeIsAIndex(mlirtype)
         return push!(currentblock(cg), arith.index_cast(
             x;
-            out=MLIRType(Int), location=loc)
-            ) |> IR.get_result
+            out=IR.Type(Int), location=loc)
+            ) |> IR.result
     else
         return x
     end
@@ -50,7 +49,7 @@ function i64toindex(cg, x::Value; loc=IR.Location())
         return push!(currentblock(cg), arith.index_cast(
             x;
             out=IR.IndexType(), location=loc
-        )) |> IR.get_result
+        )) |> IR.result
     else
         return x
     end
@@ -81,14 +80,14 @@ emit(cg::CodegenContext, ic::InstructionContext{Base.div_float}) = cg, single_op
 
 function emit(cg::CodegenContext, ic::InstructionContext{Base.not_int})
     arg = get_value(cg, only(ic.args))
-    ones = push!(currentblock(cg), arith.constant(value=-1, result=IR.get_type(arg), location=ic.loc)) |> IR.get_result
-    return cg, IR.get_result(push!(currentblock(cg), arith.xori(arg, ones; location=ic.loc)))
+    ones = push!(currentblock(cg), arith.constant(value=-1, result=IR.get_type(arg), location=ic.loc)) |> IR.result
+    return cg, IR.result(push!(currentblock(cg), arith.xori(arg, ones; location=ic.loc)))
 end
 function emit(cg::CodegenContext, ic::InstructionContext{Base.bitcast})
     @show ic.args
     type, value = get_value.(Ref(cg), ic.args)
     value = indextoi64(cg, value)
-    return cg, IR.get_result(push!(currentblock(cg), arith.bitcast(value; out=type, location=ic.loc)))
+    return cg, IR.result(push!(currentblock(cg), arith.bitcast(value; out=type, location=ic.loc)))
 end
 function emit(cg::CodegenContext, ic::InstructionContext{Base.getfield})
     object = get_value(cg, first(ic.args))
@@ -99,13 +98,13 @@ end
 function emit(cg::CodegenContext, ic::InstructionContext{Core.tuple})
     inputs = get_value.(Ref(cg), ic.args)
     if all(IR.MLIRValueTrait.(typeof.(inputs)) .== Ref(IR.Convertible))
-        outputs = MLIRType.(typeof.(inputs))
+        outputs = IR.Type.(typeof.(inputs))
         op = push!(currentblock(cg), builtin.unrealized_conversion_cast(
             inputs;
             outputs,
             location=ic.loc
         ))
-        return cg, Tuple(typeof(inputs[i])(IR.get_result(op, i)) for i in 1:fieldcount(ic.result_type))
+        return cg, Tuple(typeof(inputs[i])(IR.result(op, i)) for i in 1:fieldcount(ic.result_type))
     else    
         # If there are non-convertible types in the IR, the operation can't be emitted.
         # This doesn't necessarily lead to an error, as long as the tuple values are not used in emitted MLIR. 
@@ -116,71 +115,71 @@ function emit(cg::CodegenContext, ic::InstructionContext{Core.ifelse})
     T = get_type(cg, ic.args[2])
     @assert T == get_type(cg, ic.args[3]) "Branches in Core.ifelse should have the same type."
     condition, true_value, false_value = get_value.(Ref(cg), ic.args)
-    return cg, IR.get_result(push!(currentblock(cg), arith.select(condition, true_value, false_value; result=IR.get_type(true_value), location=ic.loc)))
+    return cg, IR.result(push!(currentblock(cg), arith.select(condition, true_value, false_value; result=IR.get_type(true_value), location=ic.loc)))
 end
 function emit(cg::CodegenContext, ic::InstructionContext{Base.throw_boundserror})
     @warn "Ignoring potential boundserror while generating MLIR."
     return cg, nothing
 end
-function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryref})
-    @assert get_type(cg, ic.args[1]) <: MemoryRef "memoryref(::Memory) is not yet supported."
-    mr = get_value(cg, ic.args[1])
-    one_off = IR.get_result(push!(currentblock(cg), index.constant(value=Attribute(1, IR.IndexType()); location=ic.loc)))
-    offsets = push!(currentblock(cg), index.sub(
-        i64toindex(cg, get_value(cg, ic.args[2])),
-        one_off;
-        result=IR.IndexType(),
-        location=ic.loc
-    )) |> IR.get_results
-    sizes = push!(currentblock(cg), index.sub(
-        mr.mem.length,
-        only(offsets);
-        result=IR.IndexType(),
-        location=ic.loc,
-    )) |> IR.get_results
-    flattened = push!(currentblock(cg), memref.reinterpretcast(
-        mr.ptr_or_offset,
-        offsets,
-        sizes,
-        Value[];
-        result=MLIRType(Vector{eltype(get_type(cg, ic.args[1]))}),
-        static_offsets=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[API.mlirShapedTypeGetDynamicSize()])),
-        static_sizes=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[API.mlirShapedTypeGetDynamicSize()])),
-        static_strides=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[1])),
-        location=Location()
-    )) |> IR.get_result
-    return cg, (; ptr_or_offset=flattened, mem=mr.mem)
-end
-function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryrefget})
-    @assert ic.args[2] == :not_atomic "Only non-atomic memoryrefget is supported."
-    @assert ic.args[2] == :not_atomic "Only non-atomic memoryrefget is supported."
-    # TODO: ic.args[3] signals boundschecking, currently ignored.
+# function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryref})
+#     @assert get_type(cg, ic.args[1]) <: MemoryRef "memoryref(::Memory) is not yet supported."
+#     mr = get_value(cg, ic.args[1])
+#     one_off = IR.result(push!(currentblock(cg), index.constant(value=Attribute(1, IR.IndexType()); location=ic.loc)))
+#     offsets = push!(currentblock(cg), index.sub(
+#         i64toindex(cg, get_value(cg, ic.args[2])),
+#         one_off;
+#         result=IR.IndexType(),
+#         location=ic.loc
+#     )) |> IR.results
+#     sizes = push!(currentblock(cg), index.sub(
+#         mr.mem.length,
+#         only(offsets);
+#         result=IR.IndexType(),
+#         location=ic.loc,
+#     )) |> IR.results
+#     flattened = push!(currentblock(cg), memref.reinterpretcast(
+#         mr.ptr_or_offset,
+#         offsets,
+#         sizes,
+#         Value[];
+#         result=IR.Type(Vector{eltype(get_type(cg, ic.args[1]))}),
+#         static_offsets=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[API.mlirShapedTypeGetDynamicSize()])),
+#         static_sizes=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[API.mlirShapedTypeGetDynamicSize()])),
+#         static_strides=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[1])),
+#         location=Location()
+#     )) |> IR.result
+#     return cg, (; ptr_or_offset=flattened, mem=mr.mem)
+# end
+# function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryrefget})
+#     @assert ic.args[2] == :not_atomic "Only non-atomic memoryrefget is supported."
+#     @assert ic.args[2] == :not_atomic "Only non-atomic memoryrefget is supported."
+#     # TODO: ic.args[3] signals boundschecking, currently ignored.
     
-    mr = get_value(cg, ic.args[1]).ptr_or_offset
-    indices=push!(currentblock(cg), index.constant(value=Attribute(0, IR.IndexType()), location=ic.loc)) |> IR.get_results
-    return cg, push!(currentblock(cg), memref.load(
-        mr,
-        indices;
-        result=MLIRType(eltype(get_type(cg, ic.args[1]))),
-        location=ic.loc,
-    )) |> IR.get_result
-end
-function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryrefset!})
-    @assert ic.args[3] == :not_atomic "Only non-atomic memoryrefset! is supported."
+#     mr = get_value(cg, ic.args[1]).ptr_or_offset
+#     indices=push!(currentblock(cg), index.constant(value=Attribute(0, IR.IndexType()), location=ic.loc)) |> IR.results
+#     return cg, push!(currentblock(cg), memref.load(
+#         mr,
+#         indices;
+#         result=IR.Type(eltype(get_type(cg, ic.args[1]))),
+#         location=ic.loc,
+#     )) |> IR.result
+# end
+# function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryrefset!})
+#     @assert ic.args[3] == :not_atomic "Only non-atomic memoryrefset! is supported."
 
-    mr = get_value(cg, ic.args[1])
+#     mr = get_value(cg, ic.args[1])
 
-    value = get_value(cg, ic.args[2])
-    mr = mr.ptr_or_offset
-    indices=push!(currentblock(cg), arith.constant(value=Attribute(0, IR.IndexType()), location=ic.loc)) |> IR.get_results
-    push!(currentblock(cg), memref.store(
-        value,
-        mr.ptr_or_offset,
-        indices;
-        location=ic.loc,
-    ))
-    return cg, value
-end
+#     value = get_value(cg, ic.args[2])
+#     mr = mr.ptr_or_offset
+#     indices=push!(currentblock(cg), arith.constant(value=Attribute(0, IR.IndexType()), location=ic.loc)) |> IR.results
+#     push!(currentblock(cg), memref.store(
+#         value,
+#         mr.ptr_or_offset,
+#         indices;
+#         location=ic.loc,
+#     ))
+#     return cg, value
+# end
 
 "Generates a block argument for each phi node present in the block."
 function prepare_block(ir, bb)
@@ -192,7 +191,7 @@ function prepare_block(ir, bb)
         inst isa Core.PhiNode || continue
 
         type = stmt[:type]
-        IR.push_argument!(b, MLIRType(type), Location())
+        IR.push_argument!(b, IR.Type(type))
     end
 
     return b
@@ -209,7 +208,13 @@ function collect_value_arguments(ir, from, to)
 
         edge = findfirst(==(from), inst.edges)
         if isnothing(edge) # use dummy scalar val instead
-            val = zero(stmt[:type])
+            @warn stmt[:type]
+
+            # execute within pass so that operation is pushed in the block
+            val = mlircompilationpass() do
+                IR.result(ub.poison(; result=IR.Type(stmt[:type])))
+            end
+
             push!(values, val)
         else
             push!(values, inst.values[edge])
@@ -256,7 +261,7 @@ This only supports a few Julia Core primitives and scalar types of type $BrutusT
 """
 function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=false, ignore_returns=emit_region)
     ctx = context()
-    ir, ret = Core.Compiler.code_ircode(f, types) |> only
+    ir, ret = Core.Compiler.code_ircode(f, types; interp=MLIRInterpreter()) |> only
     @assert first(ir.argtypes) isa Core.Const
 
     types = ir.argtypes[begin+1:end]
@@ -285,7 +290,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
         for (i, argtype) in enumerate(types)
             args = []
             for t in unpack(argtype)
-                arg = IR.push_argument!(cg.entryblock, MLIRType(t), Location())
+                arg = IR.push_argument!(cg.entryblock, IR.Type(t))
                 push!(args, t(arg))
             end
             # TODO: what to do with padding?
@@ -367,20 +372,35 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     ic = InstructionContext{called_func}(args, val_type, loc)
 
                     argvalues = get_value.(Ref(cg), ic.args)
-                    
-                    out = mlircompilationpass() do
-                        called_func(argvalues...)
+
+                    # special case mlir_bool_conversion to just forward the argument
+                    if called_func == mlir_bool_conversion
+                        @assert length(argvalues) == 2
+                        out = argvalues[end]
+                    else
+                        out = mlircompilationpass() do
+                            called_func(argvalues...)
+                        end
                     end
 
                     values[sidx] = out
 
-
                 elseif inst isa PhiNode
-                    values[sidx] = stmt[:type](IR.get_argument(currentblock(cg), n_phi_nodes += 1))
+                    values[sidx] = stmt[:type](IR.argument(currentblock(cg), n_phi_nodes += 1))
                 elseif inst isa PiNode
                     values[sidx] = get_value(values, inst.val)
                 elseif inst isa GotoNode
-                    args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.label))...]
+                    # args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.label))...]
+                    #TODO: handle bools better?
+                    args = map(collect_value_arguments(cg.ir, cg.currentblockindex, inst.label)) do arg
+                        if (arg isa Bool)
+                            return mlircompilationpass() do
+                                IR.result(arith.constant(; result=IR.Type(Bool), value=arg))
+                            end
+                        else
+                            return get_value(cg, arg)
+                        end
+                    end
                     dest = cg.blocks[inst.label]
                     loc = Location(string(line.file), line.line, 0)
                     push!(currentblock(cg), cf.br(args; dest, location=loc))
@@ -408,7 +428,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                             returnvalue = reinterpret(Tuple{unpack(typeof(v))...}, v)
                         end
                     else
-                        returnvalue = [IR.get_result(push!(currentblock(cg), llvm.mlir_undef(; res=MLIRType(cg.ret), location=loc)))]
+                        returnvalue = [IR.result(push!(currentblock(cg), llvm.mlir_undef(; res=IR.Type(cg.ret), location=loc)))]
                     end
                     push!(currentblock(cg), func.return_(returnvalue; location=loc))
                 elseif Meta.isexpr(inst, :new)
@@ -418,7 +438,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     # Skip
                 elseif Meta.isexpr(inst, :boundscheck)
                     @warn "discarding boundscheck"
-                    cg.values[sidx] = IR.get_result(push!(currentblock(cg), arith.constant(value=true)))
+                    cg.values[sidx] = IR.result(push!(currentblock(cg), arith.constant(value=true)))
                 elseif Meta.isexpr(inst, :GlobalRef)
 
                 else
@@ -450,20 +470,19 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
             println(currentregion(cg).region.ptr)
             return currentregion(cg)
         else
-            input_types = MLIRType[
-                IR.get_type(IR.get_argument(cg.entryblock, i))
-                for i in 1:IR.num_arguments(cg.entryblock)
+            input_types = IR.Type[
+                IR.type(IR.argument(cg.entryblock, i))
+                for i in 1:IR.nargs(cg.entryblock)
             ]
-            result_types = MLIRType.(unpack(ret))
-
-            ftype = MLIRType(input_types => result_types)
+            result_types = IR.Type[IR.Type.(unpack(ret))...]
+            ftype = IR.FunctionType(input_types, result_types)
             op = IR.create_operation(
                 "func.func",
                 Location();
                 attributes = [
-                    NamedAttribute("sym_name", IR.Attribute(string(fname))),
-                    NamedAttribute("function_type", IR.Attribute(ftype)),
-                    NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
+                    IR.NamedAttribute("sym_name", IR.Attribute(string(fname))),
+                    IR.NamedAttribute("function_type", IR.Attribute(ftype)),
+                    IR.NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
                 ],
                 owned_regions = Region[currentregion(cg)],
                 result_inference=false,

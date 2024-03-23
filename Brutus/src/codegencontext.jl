@@ -81,17 +81,15 @@ function get_value(cg::CodegenContext, x)
     elseif x isa Core.Argument
         @assert isassigned(cg.args, x.n-1) "value $x was not assigned"
         return cg.args[x.n-1]
-        # return IR.get_argument(cg.entryblock, x.n - 1)
+        # return IR.argument(cg.entryblock, x.n - 1)
     elseif x isa BrutusType
-        # if x isa Int
-        #     return IR.get_result(push!(currentblock(cg), arith.constant(value=x)))
-        # else
-            return x
-        # end
+        return x
     elseif (x isa Type) && (x <: BrutusType)
-        return IR.MLIRType(x)
+        #TODO: clean-up
+        error("this shouldn't be hit anymore")
+        return IR.Type(x)
     elseif x == GlobalRef(Main, :nothing) # This might be something else than Main sometimes?
-        return IR.MLIRType(Nothing)
+        return IR.Type(Nothing)
     else
         # error("could not use value $x inside MLIR")
         @warn "Value could not be converted to MLIR: $x, of type $(typeof(x))."

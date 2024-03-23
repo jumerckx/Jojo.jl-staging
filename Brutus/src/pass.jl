@@ -1,4 +1,4 @@
-function lowerModuleToLLVM(mod::IR.MModule)
+function lowerModuleToLLVM(mod::IR.Module)
     pm = IR.PassManager()
     IR.add_pipeline!(MLIR.IR.OpPassManager(pm), "normalize-memrefs")
     IR.add_pipeline!(MLIR.IR.OpPassManager(pm), "affine-expand-index-ops")
@@ -17,7 +17,7 @@ function lowerModuleToLLVM(mod::IR.MModule)
     return mod
 end
 
-function lowerModuleToNVVM(mod::IR.MModule)
+function lowerModuleToNVVM(mod::IR.Module)
     pm = IR.PassManager()
 
     pm_func = API.mlirPassManagerGetNestedUnder(pm, "func.func")
@@ -73,7 +73,7 @@ function simplify(op::IR.Operation)
     return op
 end
 
-function simplify(mod::IR.MModule)
+function simplify(mod::IR.Module)
     simplify(IR.get_operation(mod))
     return mod
 end
