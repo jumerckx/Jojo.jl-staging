@@ -118,7 +118,7 @@ function emit(cg::CodegenContext, ic::InstructionContext{Core.ifelse})
     return cg, IR.result(push!(currentblock(cg), arith.select(condition, true_value, false_value; result=IR.get_type(true_value), location=ic.loc)))
 end
 function emit(cg::CodegenContext, ic::InstructionContext{Base.throw_boundserror})
-    @warn "Ignoring potential boundserror while generating MLIR."
+    @debug "Ignoring potential boundserror while generating MLIR."
     return cg, nothing
 end
 
@@ -149,7 +149,7 @@ function collect_value_arguments(ir, from, to)
 
         edge = findfirst(==(from), inst.edges)
         if isnothing(edge) # use dummy scalar val instead
-            @warn stmt[:type]
+            @debug stmt[:type]
 
             # execute within pass so that operation is pushed in the block
             val = mlircompilationpass() do
@@ -245,7 +245,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
             for sidx in bb.stmts
                 stmt = cg.ir.stmts[sidx]
                 inst = stmt[:inst]
-                @info "Working on: $(inst)"
+                @debug "Working on: $(inst)"
                 if inst == nothing
                     inst = Core.GotoNode(block_id+1)
                     line = Core.LineInfoNode(Brutus, :code_mlir, Symbol(@__FILE__), Int32(@__LINE__), Int32(@__LINE__))
@@ -281,7 +281,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     # return called_func, args, val_type, loc
                     ic = InstructionContext{called_func}(args, val_type, loc)
                     # return cg, ic
-                    @warn ic
+                    @debug ic
                     cg, res = emit(cg, ic)
 
                     values[sidx] = res
@@ -375,14 +375,12 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                 elseif Meta.isexpr(inst, :code_coverage_effect)
                     # Skip
                 elseif Meta.isexpr(inst, :boundscheck)
-                    @warn "discarding boundscheck"
+                    @debug "discarding boundscheck"
                     cg.values[sidx] = IR.result(push!(currentblock(cg), arith.constant(value=true)))
                 elseif Meta.isexpr(inst, :GlobalRef)
 
                 else
-                    # @warn "unhandled ir $(inst)"
-                    # return inst
-                    @warn "unhandled ir $(inst) of type $(typeof(inst))"
+                    @debug "unhandled ir $(inst) of type $(typeof(inst))"
                     if inst isa GlobalRef
                         inst = getproperty(inst.mod, inst.name)
                     end
@@ -394,7 +392,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
         # add fallthrough to next block if necessary
         for (i, b) in enumerate(cg.blocks)
             if (i != length(cg.blocks) && IR.mlirIsNull(API.mlirBlockGetTerminator(b)))
-                @warn "Block $i did not have a terminator, adding one."
+                @debug "Block $i did not have a terminator, adding one."
                 args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, i, i+1))...]
                 dest = cg.blocks[i+1]
                 loc = IR.Location()

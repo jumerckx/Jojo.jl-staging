@@ -92,7 +92,7 @@ function get_value(cg::CodegenContext, x)
         return IR.Type(Nothing)
     else
         # error("could not use value $x inside MLIR")
-        @warn "Value could not be converted to MLIR: $x, of type $(typeof(x))."
+        @debug "Value could not be converted to MLIR: $x, of type $(typeof(x))."
         return x
     end
 end
@@ -105,7 +105,7 @@ function get_type(cg::CodegenContext, x)
     elseif x isa BrutusType
         return typeof(x)
     else
-        @warn "Could not get type for $x, of type $(typeof(x))."
+        @debug "Could not get type for $x, of type $(typeof(x))."
         return nothing
         # error("could not get type for $x, of type $(typeof(x))")
     end

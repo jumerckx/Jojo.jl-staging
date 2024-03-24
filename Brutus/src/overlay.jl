@@ -14,7 +14,7 @@ mlircompilationpass = @overlaypass MLIRCompilation
         successors=nothing,
         attributes=nothing,
         result_inference=isnothing(results))
-    @info "overlaid create_operation for $name"
+    @debug "overlaid create_operation for $name"
     op = @nonoverlay IR.create_operation(
         name, loc;
         results,
