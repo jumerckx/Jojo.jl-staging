@@ -1,7 +1,7 @@
 using MLIR
 includet("utils.jl")
 using Brutus
-import Brutus: MemRef, @mlirfunction, @code_mlir
+import Brutus: MemRef, @mlirfunction
 using Brutus.Types
 using BenchmarkTools, MLIR, MacroTools
 
@@ -58,11 +58,11 @@ end
 end
 
 @mlirfunction function threadIdx()::@NamedTuple{x::index, y::index, z::index}
-    oneoff = MLIR.Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
+    oneoff = index(MLIR.Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
     indices = map(('x', 'y', 'z')) do d
         dimension = parse(IR.Attribute, "#gpu<dim $d>")
-        i = gpu.thread_id(; dimension) |> IR.result
-        index(arith.addi(i, oneoff) |> IR.result)
+        i = index(gpu.thread_id(; dimension) |> IR.result)
+        i + oneoff
     end
     return (; x=indices[1], y=indices[2], z=indices[3])
 end

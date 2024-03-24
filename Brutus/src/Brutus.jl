@@ -65,24 +65,24 @@ emit(cg::CodegenContext, ic::InstructionContext{F}) where {F} = mlircompilationp
         cg, F(args...)
     end
 
-emit(cg::CodegenContext, ic::InstructionContext{Base.and_int}) = cg, single_op_wrapper(arith.andi)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.add_int}) = cg, single_op_wrapper(arith.addi)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.sub_int}) = cg, single_op_wrapper(arith.subi)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.sle_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.sle))(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.slt_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.slt))(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.ult_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.slt))(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.:(===)}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.eq))(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.mul_int}) = cg, single_op_wrapper(arith.muli)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.add_float}) = cg, single_op_wrapper(arith.addf)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.sub_float}) = cg, single_op_wrapper(arith.subf)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.mul_float}) = cg, single_op_wrapper(arith.mulf)(cg, ic)
-emit(cg::CodegenContext, ic::InstructionContext{Base.div_float}) = cg, single_op_wrapper(arith.divf)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.and_int}) = cg, single_op_wrapper(arith.andi)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.add_int}) = cg, single_op_wrapper(arith.addi)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.sub_int}) = cg, single_op_wrapper(arith.subi)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.sle_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.sle))(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.slt_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.slt))(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.ult_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.slt))(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.:(===)}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.eq))(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.mul_int}) = cg, single_op_wrapper(arith.muli)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.add_float}) = cg, single_op_wrapper(arith.addf)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.sub_float}) = cg, single_op_wrapper(arith.subf)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.mul_float}) = cg, single_op_wrapper(arith.mulf)(cg, ic)
+# emit(cg::CodegenContext, ic::InstructionContext{Base.div_float}) = cg, single_op_wrapper(arith.divf)(cg, ic)
 
-function emit(cg::CodegenContext, ic::InstructionContext{Base.not_int})
-    arg = get_value(cg, only(ic.args))
-    ones = push!(currentblock(cg), arith.constant(value=-1, result=IR.get_type(arg), location=ic.loc)) |> IR.result
-    return cg, IR.result(push!(currentblock(cg), arith.xori(arg, ones; location=ic.loc)))
-end
+# function emit(cg::CodegenContext, ic::InstructionContext{Base.not_int})
+#     arg = get_value(cg, only(ic.args))
+#     ones = push!(currentblock(cg), arith.constant(value=-1, result=IR.get_type(arg), location=ic.loc)) |> IR.result
+#     return cg, IR.result(push!(currentblock(cg), arith.xori(arg, ones; location=ic.loc)))
+# end
 function emit(cg::CodegenContext, ic::InstructionContext{Base.bitcast})
     @show ic.args
     type, value = get_value.(Ref(cg), ic.args)
@@ -121,65 +121,6 @@ function emit(cg::CodegenContext, ic::InstructionContext{Base.throw_boundserror}
     @warn "Ignoring potential boundserror while generating MLIR."
     return cg, nothing
 end
-# function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryref})
-#     @assert get_type(cg, ic.args[1]) <: MemoryRef "memoryref(::Memory) is not yet supported."
-#     mr = get_value(cg, ic.args[1])
-#     one_off = IR.result(push!(currentblock(cg), index.constant(value=Attribute(1, IR.IndexType()); location=ic.loc)))
-#     offsets = push!(currentblock(cg), index.sub(
-#         i64toindex(cg, get_value(cg, ic.args[2])),
-#         one_off;
-#         result=IR.IndexType(),
-#         location=ic.loc
-#     )) |> IR.results
-#     sizes = push!(currentblock(cg), index.sub(
-#         mr.mem.length,
-#         only(offsets);
-#         result=IR.IndexType(),
-#         location=ic.loc,
-#     )) |> IR.results
-#     flattened = push!(currentblock(cg), memref.reinterpretcast(
-#         mr.ptr_or_offset,
-#         offsets,
-#         sizes,
-#         Value[];
-#         result=IR.Type(Vector{eltype(get_type(cg, ic.args[1]))}),
-#         static_offsets=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[API.mlirShapedTypeGetDynamicSize()])),
-#         static_sizes=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[API.mlirShapedTypeGetDynamicSize()])),
-#         static_strides=IR.Attribute(API.mlirDenseI64ArrayGet(context().context, 1, Int[1])),
-#         location=Location()
-#     )) |> IR.result
-#     return cg, (; ptr_or_offset=flattened, mem=mr.mem)
-# end
-# function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryrefget})
-#     @assert ic.args[2] == :not_atomic "Only non-atomic memoryrefget is supported."
-#     @assert ic.args[2] == :not_atomic "Only non-atomic memoryrefget is supported."
-#     # TODO: ic.args[3] signals boundschecking, currently ignored.
-    
-#     mr = get_value(cg, ic.args[1]).ptr_or_offset
-#     indices=push!(currentblock(cg), index.constant(value=Attribute(0, IR.IndexType()), location=ic.loc)) |> IR.results
-#     return cg, push!(currentblock(cg), memref.load(
-#         mr,
-#         indices;
-#         result=IR.Type(eltype(get_type(cg, ic.args[1]))),
-#         location=ic.loc,
-#     )) |> IR.result
-# end
-# function emit(cg::CodegenContext, ic::InstructionContext{Core.memoryrefset!})
-#     @assert ic.args[3] == :not_atomic "Only non-atomic memoryrefset! is supported."
-
-#     mr = get_value(cg, ic.args[1])
-
-#     value = get_value(cg, ic.args[2])
-#     mr = mr.ptr_or_offset
-#     indices=push!(currentblock(cg), arith.constant(value=Attribute(0, IR.IndexType()), location=ic.loc)) |> IR.results
-#     push!(currentblock(cg), memref.store(
-#         value,
-#         mr.ptr_or_offset,
-#         indices;
-#         location=ic.loc,
-#     ))
-#     return cg, value
-# end
 
 "Generates a block argument for each phi node present in the block."
 function prepare_block(ir, bb)
@@ -260,7 +201,6 @@ This only supports a few Julia Core primitives and scalar types of type $BrutusT
     representing Julia IR and progressively lower it to base MLIR dialects.
 """
 function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=false, ignore_returns=emit_region)
-    ctx = context()
     ir, ret = Core.Compiler.code_ircode(f, types; interp=MLIRInterpreter()) |> only
     @assert first(ir.argtypes) isa Core.Const
 
@@ -299,8 +239,6 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
 
         for (block_id, bb) in enumerate(cg.ir.cfg.blocks)
             cg.currentblockindex = block_id
-            @info "number of regions: $(length(cg.regions))"
-            @show currentblock(cg)
             push!(currentregion(cg), currentblock(cg))
             n_phi_nodes = 0
 
@@ -352,14 +290,14 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     _, called_func, args... = inst.args
                     if called_func isa Core.SSAValue
                         called_func = get_value(cg, called_func)
-                    elseif called_func isa GlobalRef # TODO: should probably use something else here
+                    elseif called_func isa GlobalRef # TODO: use `abstract_eval_globalref` instead to be sure
                         called_func = getproperty(called_func.mod, called_func.name)
                     elseif called_func isa QuoteNode
                         called_func = called_func.value
                     end
                     args = map(args) do arg
                         if arg isa GlobalRef
-                            arg = getproperty(arg.mod, arg.name)
+                            arg = getproperty(arg.mod, arg.name) # TODO: use `abstract_eval_globalref` instead to be sure
                         elseif arg isa QuoteNode
                             arg = arg.value
                         end
@@ -497,24 +435,6 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
     end
 
 
-end
-
-"""
-    @code_mlir f(args...)
-"""
-macro code_mlir(call)
-    @assert Meta.isexpr(call, :call) "only calls are supported"
-
-    f = first(call.args) |> esc
-    args = Expr(:curly,
-        Tuple,
-        map(arg -> :($(Core.Typeof)($arg)),
-            call.args[begin+1:end])...,
-    ) |> esc
-
-    quote
-        code_mlir($f, $args)
-    end
 end
 
 end # module Brutus
