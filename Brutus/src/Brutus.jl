@@ -322,19 +322,18 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     end
                     dest = cg.blocks[inst.label]
                     loc = Location(string(line.file), line.line, 0)
-                    push!(currentblock(cg), cf.br(args; dest, location=loc))
+                    push!(currentblock(cg), generate_goto(cg, args, dest; location=loc))
                 elseif inst isa GotoIfNot
                     false_args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, inst.dest))...]
                     cond = get_value(cg, inst.cond)
                     @assert length(bb.succs) == 2 # NOTE: We assume that length(bb.succs) == 2, this might be wrong
-                    trueDest = setdiff(bb.succs, inst.dest) |> only
-                    true_args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, trueDest))...]
-                    trueDest = cg.blocks[trueDest]
-                    falseDest = cg.blocks[inst.dest]
+                    true_dest = setdiff(bb.succs, inst.dest) |> only
+                    true_args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, cg.currentblockindex, true_dest))...]
+                    true_dest = cg.blocks[true_dest]
+                    false_dest = cg.blocks[inst.dest]
 
                     location = Location(string(line.file), line.line, 0)
-                    cond_br = cf.cond_br(cond, true_args, false_args; trueDest, falseDest, location)
-                    push!(currentblock(cg), cond_br)
+                    push!(currentblock(cg), generate_gotoifnot(cg, cond; true_args, false_args, true_dest, false_dest, location))
                 elseif inst isa ReturnNode
                     ignore_returns && continue
                     line = cg.ir.linetable[stmt[:line]]
@@ -349,10 +348,14 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     else
                         returnvalue = [IR.result(push!(currentblock(cg), llvm.mlir_undef(; res=IR.Type(cg.ret), location=loc)))]
                     end
-                    push!(currentblock(cg), func.return_(returnvalue; location=loc))
+                    push!(
+                        currentblock(cg),
+                        generate_return(cg, returnvalue; location=loc)
+                        )
                 elseif Meta.isexpr(inst, :new)
+                    @info ir
                     args = get_value.(Ref(cg), inst.args[2:end])
-                    values[sidx] = unsafe_new(inst.args[1], args)
+                    values[sidx] = unsafe_new(inst.args[1], args...)
                 elseif Meta.isexpr(inst, :code_coverage_effect)
                     # Skip
                 elseif Meta.isexpr(inst, :boundscheck)
@@ -377,7 +380,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                 args = [get_value.(Ref(cg), collect_value_arguments(cg.ir, i, i+1))...]
                 dest = cg.blocks[i+1]
                 loc = IR.Location()
-                push!(b, cf.br(args; dest, location=loc))
+                push!(b, generate_goto(cg, args, dest; location=loc))
             end
         end
 

@@ -1,6 +1,12 @@
 using MLIR: IR, API
 
-mutable struct CodegenContext
+abstract type AbstractCodegenContext end
+
+generate_return(cg::T, values; location) where {T<:AbstractCodegenContext} = error("generate_return not implemented for type $T")
+generate_goto(cg::T, args, dest; location) where {T<:AbstractCodegenContext} = error("generate_goto not implemented for type $T")
+generate_gotoifnot(cg::T, cond; true_args, false_args, true_dest, false_dest, location) where {T<:AbstractCodegenContext} = error("generate_gotoifnot not implemented for type $T")
+
+mutable struct CodegenContext <: AbstractCodegenContext
     region::Region
     const blocks::Vector{Block}
     const entryblock::Block
@@ -26,6 +32,10 @@ mutable struct CodegenContext
     end
 end
 
+generate_return(cg::CodegenContext, values; location) = func.return_(values; location)
+generate_goto(cg::CodegenContext, args, dest; location) = cf.br(args; dest, location)
+generate_gotoifnot(cg::CodegenContext, cond; true_args, false_args, true_dest, false_dest, location) = cf.cond_br(cond, true_args, false_args; trueDest=true_dest, falseDest=false_dest, location)
+
 function CodegenContext(f::Core.Function; kwargs...)
     cg = CodegenContext(; kwargs...)
     try
@@ -36,9 +46,6 @@ function CodegenContext(f::Core.Function; kwargs...)
 end
 
 currentblock(cg::CodegenContext) = cg.blocks[cg.currentblockindex]
-start_region!(cg::CodegenContext) = push!(cg.regions, Region())[end]
-stop_region!(cg::CodegenContext) = pop!(cg.regions)
-currentregion(cg::CodegenContext) = cg.regions[end]
 
 _has_context() = haskey(task_local_storage(), :CodegenContext) &&
                  !isempty(task_local_storage(:CodegenContext))
