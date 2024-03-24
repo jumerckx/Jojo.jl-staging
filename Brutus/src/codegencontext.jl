@@ -1,8 +1,7 @@
 using MLIR: IR, API
 
 mutable struct CodegenContext
-    regions::Vector{Region}
-    loop_thunks::Vector
+    region::Region
     const blocks::Vector{Block}
     const entryblock::Block
     currentblockindex::Int
@@ -11,9 +10,9 @@ mutable struct CodegenContext
     const values::Vector
     const args::Vector
 
+
     function CodegenContext(;
-            regions::Vector{Region},
-            loop_thunks::Vector,
+            region::Region,
             blocks::Vector{Block},
             entryblock::Block,
             currentblockindex::Int,
@@ -21,7 +20,7 @@ mutable struct CodegenContext
             ret::Type,
             values::Vector,
             args::Vector)
-        cg = new(regions, loop_thunks, blocks, entryblock, currentblockindex, ir, ret, values, args)
+        cg = new(region, blocks, entryblock, currentblockindex, ir, ret, values, args)
         activate(cg)
         return cg
     end

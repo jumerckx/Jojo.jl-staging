@@ -65,24 +65,6 @@ emit(cg::CodegenContext, ic::InstructionContext{F}) where {F} = mlircompilationp
         cg, F(args...)
     end
 
-# emit(cg::CodegenContext, ic::InstructionContext{Base.and_int}) = cg, single_op_wrapper(arith.andi)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.add_int}) = cg, single_op_wrapper(arith.addi)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.sub_int}) = cg, single_op_wrapper(arith.subi)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.sle_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.sle))(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.slt_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.slt))(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.ult_int}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.slt))(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.:(===)}) = cg, single_op_wrapper(cmpi_pred(arith.Predicates.eq))(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.mul_int}) = cg, single_op_wrapper(arith.muli)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.add_float}) = cg, single_op_wrapper(arith.addf)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.sub_float}) = cg, single_op_wrapper(arith.subf)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.mul_float}) = cg, single_op_wrapper(arith.mulf)(cg, ic)
-# emit(cg::CodegenContext, ic::InstructionContext{Base.div_float}) = cg, single_op_wrapper(arith.divf)(cg, ic)
-
-# function emit(cg::CodegenContext, ic::InstructionContext{Base.not_int})
-#     arg = get_value(cg, only(ic.args))
-#     ones = push!(currentblock(cg), arith.constant(value=-1, result=IR.get_type(arg), location=ic.loc)) |> IR.result
-#     return cg, IR.result(push!(currentblock(cg), arith.xori(arg, ones; location=ic.loc)))
-# end
 function emit(cg::CodegenContext, ic::InstructionContext{Base.bitcast})
     @show ic.args
     type, value = get_value.(Ref(cg), ic.args)
@@ -217,8 +199,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
     ]
 
     CodegenContext(;
-        regions=[Region()],
-        loop_thunks=[],
+        region=Region(),
         blocks,
         entryblock=blocks[begin],
         currentblockindex=1,
@@ -239,7 +220,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
 
         for (block_id, bb) in enumerate(cg.ir.cfg.blocks)
             cg.currentblockindex = block_id
-            push!(currentregion(cg), currentblock(cg))
+            push!(cg.region, currentblock(cg))
             n_phi_nodes = 0
 
             for sidx in bb.stmts
@@ -402,9 +383,9 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
 
         if emit_region
             println("emitting region")
-            @show currentregion(cg)
-            println(currentregion(cg).region.ptr)
-            return currentregion(cg)
+            @show cg.region
+            println(cg.region.region.ptr)
+            return cg.region
         else
             input_types = IR.Type[
                 IR.type(IR.argument(cg.entryblock, i))
@@ -420,7 +401,7 @@ function code_mlir(f, types; fname=nameof(f), do_simplify=true, emit_region=fals
                     IR.NamedAttribute("function_type", IR.Attribute(ftype)),
                     IR.NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
                 ],
-                owned_regions = Region[currentregion(cg)],
+                owned_regions = Region[cg.region],
                 result_inference=false,
             )
 
