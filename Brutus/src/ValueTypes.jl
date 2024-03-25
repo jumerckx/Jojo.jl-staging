@@ -51,7 +51,6 @@ MLIR.IR.Type(::Type{MLIRInteger{N}}) where {N} = IR.Type(mlirIntegerTypeGet(MLIR
 MLIRValueTrait(::Type{<:MLIRInteger}) = Convertible()
 
 const i1 = MLIRInteger{1}
-@noinline i1(::Bool)::i1 = Brutus.new_intrinsic()
 
 const i8 = MLIRInteger{8}
 const i16 = MLIRInteger{16}

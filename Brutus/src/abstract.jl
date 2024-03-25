@@ -1,3 +1,5 @@
+intrinsic(T)::T = error("MLIR intrinsics can't be executed in a regular Julia context.")
+
 abstract type BoolTrait end
 struct NonBoollike <: BoolTrait end
 struct Boollike <: BoolTrait end
@@ -5,7 +7,7 @@ BoolTrait(T) = NonBoollike()
 
 mlir_bool_conversion(x::Bool) = x
 @inline mlir_bool_conversion(x::T) where T = mlir_bool_conversion(BoolTrait(T), x)
-@noinline mlir_bool_conversion(::Boollike, x)::Bool = new_intrinsic()::Bool
+@noinline mlir_bool_conversion(::Boollike, x)::Bool = intrinsic(Bool)
 mlir_bool_conversion(::NonBoollike, x::T) where T = error("Type $T is not marked as Boollike.")
 
 using Core: MethodInstance, CodeInstance, OpaqueClosure
@@ -38,6 +40,10 @@ end
 
 function CC.get(wvc::WorldView{CodeCache}, mi::MethodInstance, default)
     # check the cache
+    global indent
+    # Core.println("$(mi.def)")
+    # display.(stacktrace())
+    # Core.println("")
     for ci in get!(wvc.cache.dict, mi, CodeInstance[])
         if ci.min_world <= wvc.worlds.min_world && wvc.worlds.max_world <= ci.max_world
             
@@ -55,7 +61,6 @@ function CC.get(wvc::WorldView{CodeCache}, mi::MethodInstance, default)
             return ci
         end
     end
-
     return default
 end
 
@@ -131,6 +136,14 @@ CC.may_compress(interp::MLIRInterpreter) = true
 CC.may_discard_trees(interp::MLIRInterpreter) = true
 CC.verbose_stmt_info(interp::MLIRInterpreter) = false
 
+# Specialize on intrinsic(T) to return T for type inference
+function CC.abstract_call_gf_by_type(interp::MLIRInterpreter, f::typeof(intrinsic), arginfo::CC.ArgInfo, si::CC.StmtInfo, @nospecialize(atype),
+    sv::CC.AbsIntState, max_methods::Int)
+    matches = CC.find_matching_methods(CC.typeinf_lattice(interp), arginfo.argtypes, atype, CC.method_table(interp),
+        CC.InferenceParams(interp).max_union_splitting, max_methods)
+    @assert length(arginfo.argtypes) == 2
+    CC.CallMeta(arginfo.argtypes[2].val, Any, CC.Effects(; consistent=CC.ALWAYS_TRUE, nonoverlayed=!CC.isoverlayed(CC.method_table(interp))), matches.info)
+end
 
 ## utils
 

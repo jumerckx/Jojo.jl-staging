@@ -8,10 +8,10 @@ using Core: PhiNode, GotoNode, GotoIfNot, SSAValue, Argument, ReturnNode, PiNode
 const BrutusScalarType = Union{Bool, Int64, UInt64, Int32, UInt32, Float16, Float32, Float64, UInt64}
 const BrutusType = Union{BrutusScalarType, Array{BrutusScalarType}}
 
-include("intrinsics.jl")
-include("abstract.jl")
+include("MemRef.jl")
 include("pass.jl")
 include("overlay.jl")
+include("abstract.jl")
 include("codegencontext.jl")
 include("ValueTypes.jl")
 

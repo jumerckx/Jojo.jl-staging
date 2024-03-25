@@ -48,7 +48,7 @@ function mlirfunction_(expr)
         $(esc(methodtable)) = MLIRCompilation
 
         @noinline function $(esc(dict[:name]))($(esc.(dict[:args])...); $(esc.(dict[:kwargs])...))::$(esc(rtype)) where {$(esc.(dict[:whereparams])...)}
-            new_intrinsic()::$(esc(rtype))
+            intrinsic($(esc(rtype)))
         end
 
         $(esc(expr))
@@ -59,7 +59,7 @@ end
     @mlirfunction [function def]
 
 Will define the provided function definition twice. Once replacing the body with a call to
-`new_intrinsic()`, and once with the body as-is, but registered in the `MLIRCompilation` method table.
+`intrinsic()`, and once with the body as-is, but registered in the `MLIRCompilation` method table.
 
 !!! note
 
