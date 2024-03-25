@@ -1,6 +1,16 @@
 using MLIR: IR, API
 
 abstract type AbstractCodegenContext end
+Base.values(cg::T) where {T<:AbstractCodegenContext} = error("values not implemented for type $T")
+args(cg::T) where {T<:AbstractCodegenContext} = error("args not implemented for type $T")
+blocks(cg::T) where {T<:AbstractCodegenContext} = error("blocks not implemented for type $T")
+entryblock(cg::T) where {T<:AbstractCodegenContext} = error("entryblock not implemented for type $T")
+region(cg::T) where {T<:AbstractCodegenContext} = error("region not implemented for type $T")
+returntype(cg::T) where {T<:AbstractCodegenContext} = error("returntype not implemented for type $T")
+ir(cg::T) where {T<:AbstractCodegenContext} = error("ir not implemented for type $T")
+currentblockindex(cg::T) where {T<:AbstractCodegenContext} = error("currentblockindex not implemented for type $T")
+setcurrentblockindex!(cg::T, i) where {T<:AbstractCodegenContext} = error("setcurrentblockindex! not implemented for type $T")
+currentblock(cg::T) where {T<:AbstractCodegenContext} = error("currentblock not implemented for type $T")
 
 generate_return(cg::T, values; location) where {T<:AbstractCodegenContext} = error("generate_return not implemented for type $T")
 generate_goto(cg::T, args, dest; location) where {T<:AbstractCodegenContext} = error("generate_goto not implemented for type $T")
@@ -27,24 +37,63 @@ mutable struct CodegenContext <: AbstractCodegenContext
             values::Vector,
             args::Vector)
         cg = new(region, blocks, entryblock, currentblockindex, ir, ret, values, args)
-        activate(cg)
+        # activate(cg)
         return cg
     end
 end
 
+function CodegenContext(f, types)
+    ir, ret = Core.Compiler.code_ircode(f, types; interp=MLIRInterpreter()) |> only
+    # @assert first(ir.argtypes) isa Core.Const ir
+    if !(first(ir.argtypes) isa Core.Const)
+        @info typeof(f.cst)
+    end
+
+    types = ir.argtypes[begin+1:end]
+    values = Vector(undef, length(ir.stmts))
+    args = Vector(undef, length(types)+1)
+
+    blocks = [
+        prepare_block(ir, bb)
+        for bb in ir.cfg.blocks
+    ]
+    entryblock = blocks[begin]
+    
+    args[1] = f # first argument is special in that it doesn't show up in the MLIR
+    for (i, argtype) in enumerate(types)
+        temp = []
+        for t in unpack(argtype)
+            arg = IR.push_argument!(entryblock, IR.Type(t))
+            push!(temp, t(arg))
+        end
+        # TODO: what to do with padding?
+        args[i+1] = reinterpret(argtype, Tuple(temp))
+    end
+
+    CodegenContext(;
+        region=Region(),
+        blocks,
+        entryblock=entryblock,
+        currentblockindex=1,
+        ir,
+        ret,
+        values,
+        args
+    )
+end
+
+Base.values(cg::CodegenContext) = cg.values
+args(cg::CodegenContext) = cg.args
+blocks(cg::CodegenContext) = cg.blocks
+entryblock(cg::CodegenContext) = cg.entryblock
+region(cg::CodegenContext) = cg.region
+currentblockindex(cg::CodegenContext) = cg.currentblockindex
+setcurrentblockindex!(cg::CodegenContext, i) = cg.currentblockindex = i
+returntype(cg::CodegenContext) = cg.ret
+ir(cg::CodegenContext) = cg.ir
 generate_return(cg::CodegenContext, values; location) = func.return_(values; location)
 generate_goto(cg::CodegenContext, args, dest; location) = cf.br(args; dest, location)
 generate_gotoifnot(cg::CodegenContext, cond; true_args, false_args, true_dest, false_dest, location) = cf.cond_br(cond, true_args, false_args; trueDest=true_dest, falseDest=false_dest, location)
-
-function CodegenContext(f::Core.Function; kwargs...)
-    cg = CodegenContext(; kwargs...)
-    try
-        f(cg)
-    finally
-        deactivate(cg)
-    end
-end
-
 currentblock(cg::CodegenContext) = cg.blocks[cg.currentblockindex]
 
 _has_context() = haskey(task_local_storage(), :CodegenContext) &&
@@ -58,20 +107,22 @@ function codegencontext(; throw_error::Core.Bool=true)
     last(task_local_storage(:CodegenContext))
 end
 
-function activate(cg::CodegenContext)
+function activate(cg::AbstractCodegenContext)
+    @debug "activating $(hash(Ref(cg)))"
     stack = get!(task_local_storage(), :CodegenContext) do
-        CodegenContext[]
+        AbstractCodegenContext[]
     end
     push!(stack, cg)
     return
 end
 
-function deactivate(cg::CodegenContext)
+function deactivate(cg::AbstractCodegenContext)
+    @debug "deactivating $(hash(Ref(cg)))"
     codegencontext() == cg || error("Deactivating wrong CodegenContext")
     pop!(task_local_storage(:CodegenContext))
 end
 
-function codegencontext!(f, cg::CodegenContext)
+function codegencontext!(f, cg::AbstractCodegenContext)
     activate(cg)
     try
         f()
@@ -80,13 +131,13 @@ function codegencontext!(f, cg::CodegenContext)
     end
 end
 
-function get_value(cg::CodegenContext, x)
+function get_value(cg::AbstractCodegenContext, x)
     if x isa Core.SSAValue
-        @assert isassigned(cg.values, x.id) "value $x was not assigned"
-        return cg.values[x.id]
+        @assert isassigned(values(cg), x.id) "value $x was not assigned"
+        return values(cg)[x.id]
     elseif x isa Core.Argument
-        @assert isassigned(cg.args, x.n-1) "value $x was not assigned"
-        return cg.args[x.n-1]
+        @assert isassigned(args(cg), x.n) "value $x was not assigned"
+        return args(cg)[x.n]
         # return IR.argument(cg.entryblock, x.n - 1)
     elseif x isa BrutusType
         return x

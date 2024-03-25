@@ -189,9 +189,7 @@ function insert_bool_conversions_pass(mi, src)
     for (v, st) in b
         if st isa Core.GotoIfNot
             arg = st.cond isa Core.SSAValue ? var(st.cond.id + offsets[st.cond.id]) : st.cond
-            # arg = st.cond isa Core.SlotNumber ? st.cond : var(st.cond.id + offsets[st.cond.id])
             b[v] = Statement(Expr(:call, GlobalRef(Brutus, :mlir_bool_conversion), arg))
-            # b[v] = Statement(Expr(:call, GlobalRef(Main, :mlir_bool_conversion)))
             push!(b, Core.GotoIfNot(v, st.dest))
             insert!(offsets, v.id)
         elseif st isa Core.GotoNode

@@ -2,7 +2,7 @@ using InteractiveUtils, CassetteOverlay
 using MLIR: IR, API
 
 const mlir_runner_utils = joinpath(splitpath(MLIR.API.MLIR_jll.mlir_c)[1:end-1]..., "libmlir_runner_utils.so")
-const mlir_c_runner_utils = joinpath(splitpath(MLIR.API.MLIR_jll.mlir_c)[1:end-1]..., "mlir/lib/libmlir_c_runner_utils.so")
+const mlir_c_runner_utils = joinpath(splitpath(MLIR.API.MLIR_jll.mlir_c)[1:end-1]..., "libmlir_c_runner_utils.so")
 
 macro code_ircode(ex0...)
     thecall = InteractiveUtils.gen_call_with_extracted_types_and_kwargs(@__MODULE__, :(Base.code_ircode), ex0)

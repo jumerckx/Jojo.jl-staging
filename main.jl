@@ -1,7 +1,7 @@
 using MLIR
 includet("utils.jl")
 using Brutus
-import Brutus: MemRef, @mlirfunction, @code_mlir
+import Brutus: MemRef, @mlirfunction
 using Brutus.Types
 using BenchmarkTools, MLIR, MacroTools
 
@@ -41,10 +41,9 @@ g(a::AbstractVector) = a[2]
 h(a, i) = a[i]
 
 Brutus.BoolTrait(::Type{<: i1}) = Brutus.Boollike()
-empty!(Brutus.global_ci_cache)
 
 Base.code_ircode(f, (i64, i64), interp=Brutus.MLIRInterpreter())
-@time op_f = Brutus.code_mlir(f, Tuple{i64, i64})
+@time op_f = Brutus.generate(f, Tuple{i64, i64})
 @assert IR.verify(op_f)
 
 #region Running the code

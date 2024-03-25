@@ -57,14 +57,16 @@ end
     return i64(arith.constant(; value=Attribute(x)) |> IR.result)
 end
 
-@mlirfunction function threadIdx()::@NamedTuple{x::index, y::index, z::index}
+@mlirfunction function threadIdx(dim::Symbol)::index
     oneoff = index(MLIR.Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
-    indices = map(('x', 'y', 'z')) do d
-        dimension = parse(IR.Attribute, "#gpu<dim $d>")
-        i = index(gpu.thread_id(; dimension) |> IR.result)
-        i + oneoff
-    end
-    return (; x=indices[1], y=indices[2], z=indices[3])
+    
+    dimension = parse(IR.Attribute, "#gpu<dim $dim>")
+    i = index(gpu.thread_id(; dimension) |> IR.result)
+    i + oneoff
+end
+
+function threadIdx()::@NamedTuple{x::index, y::index, z::index}
+    (; x=threadIdx(:x), y=threadIdx(:y), z=threadIdx(:z))
 end
 
 @mlirfunction function blockIdx()::@NamedTuple{x::index, y::index, z::index}
@@ -87,15 +89,29 @@ end
     return (; x=indices[1], y=indices[2], z=indices[3])
 end
 
-Brutus.code_mlir(Tuple{i64, i64}) do a, b
+
+Brutus.generate(Tuple{i64, i64}) do a, b
     a>b ? a : b
+end
+
+
+Brutus.generate(Tuple{i64, i64}) do a, b
+    if (a>b)
+        return a*(a+b)
+    else
+        return a-b
+    end
 end
 
 Base.code_ircode(Tuple{i64, i64}, interp=Brutus.MLIRInterpreter()) do a, b
     a>b ? a : b
 end
 
-Brutus.code_mlir(Tuple{}) do 
+Brutus.generate(Tuple{}) do 
+    threadIdx().x, blockDim().y
+end
+
+Base.code_ircode(Tuple{}, interp=Brutus.MLIRInterpreter()) do 
     threadIdx().x, blockDim().y
 end
 
@@ -107,4 +123,67 @@ end
 
 # Base.code_ircode(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}, interp=Brutus.MLIRInterpreter())
 
-Brutus.code_mlir(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}})
+Brutus.generate(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}})
+
+struct GPUCodegenContext <: Brutus.AbstractCodegenContext
+    cg::Brutus.CodegenContext
+end
+GPUCodegenContext(f, types) = GPUCodegenContext(Brutus.CodegenContext(f, types))
+
+for f in (
+    :(Base.values),
+    :(Brutus.args),
+    :(Brutus.blocks),
+    :(Brutus.returntype),
+    :(Brutus.ir),
+    :(Brutus.generate_goto),
+    :(Brutus.generate_gotoifnot),
+    :(Brutus.currentblock),
+    :(Brutus.currentblockindex),
+    :(Brutus.setcurrentblockindex!),
+    :(Brutus.region),
+    :(Brutus.entryblock),
+
+    :(Brutus.generate_goto),
+    :(Brutus.generate_gotoifnot))
+    eval(
+        quote
+            function $f(cg::GPUCodegenContext, args...; kwargs...)
+                $f(cg.cg, args...; kwargs...)
+            end
+        end
+    )
+end
+function Brutus.generate_return(cg::GPUCodegenContext, values; location)
+    if (length(values) != 0)
+        error("GPU kernel should return Nothing, got values of type $(typeof(values))")
+    end
+    return Dialects.gpu.terminator(; location)
+end
+
+Brutus.generate(GPUCodegenContext(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}))
+
+
+
+@mlirfunction function scf_yield(results)::Nothing
+    Dialects.scf.yield(results)
+    nothing
+end
+
+@mlirfunction function scf_for(body, initial_value::T, lb::index, ub::index, step::index)::T where T
+    @info "body IR" @nonoverlay Base.code_ircode(body, Tuple{index, T}, interp=Brutus.MLIRInterpreter())
+    region = @nonoverlay Brutus.generate(body, Tuple{index, T}, emit_region=true, skip_return=true)
+    op = Dialects.scf.for_(lb, ub, step, [initial_value]; results=IR.Type[IR.Type(T)], region)
+    return T(IR.result(op))
+end
+
+Brutus.generate(Tuple{index, index, index, i64, i64}, do_simplify=false) do lb, ub, step, initial, cst
+
+    a = scf_for(initial, lb, ub, step) do i, carry
+        b = scf_for(initial, lb, ub, step) do j, carry2
+            scf_yield((carry2 * cst, ))
+        end
+        scf_yield((b + cst, ))
+    end
+    return a
+end
