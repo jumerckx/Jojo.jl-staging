@@ -37,17 +37,12 @@ mutable struct CodegenContext <: AbstractCodegenContext
             values::Vector,
             args::Vector)
         cg = new(region, blocks, entryblock, currentblockindex, ir, ret, values, args)
-        # activate(cg)
         return cg
     end
 end
 
 function CodegenContext(f, types)
     ir, ret = Core.Compiler.code_ircode(f, types; interp=MLIRInterpreter()) |> only
-    # @assert first(ir.argtypes) isa Core.Const ir
-    if !(first(ir.argtypes) isa Core.Const)
-        @info typeof(f.cst)
-    end
 
     types = ir.argtypes[begin+1:end]
     values = Vector(undef, length(ir.stmts))

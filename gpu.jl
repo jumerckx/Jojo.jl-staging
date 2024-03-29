@@ -19,6 +19,8 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 ################################################################################################
 Brutus.BoolTrait(::Type{<: i1}) = Brutus.Boollike()
 
+@mlirfunction Base.:+(a::f32, b::f32)::f32 = f32(arith.addf(a, b)|>IR.result)
+
 @mlirfunction Base.:+(a::index, b::index)::index = index(Dialects.index.add(a, b)|>IR.result)
 @mlirfunction Base.:-(a::index, b::index)::index = index(Dialects.index.sub(a, b)|>IR.result)
 @mlirfunction Base.:*(a::index, b::index)::index = index(Dialects.index.mul(a, b)|>IR.result)
@@ -123,7 +125,7 @@ end
 
 # Base.code_ircode(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}, interp=Brutus.MLIRInterpreter())
 
-Brutus.generate(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}})
+@time Brutus.generate(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}})
 
 struct GPUCodegenContext <: Brutus.AbstractCodegenContext
     cg::Brutus.CodegenContext
@@ -158,7 +160,7 @@ function Brutus.generate_return(cg::GPUCodegenContext, values; location)
     if (length(values) != 0)
         error("GPU kernel should return Nothing, got values of type $(typeof(values))")
     end
-    return Dialects.gpu.terminator(; location)
+    return Dialects.gpu.return_(values; location)
 end
 
 Brutus.generate(GPUCodegenContext(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}))
@@ -187,3 +189,126 @@ Brutus.generate(Tuple{index, index, index, i64, i64}, do_simplify=false) do lb, 
     end
     return a
 end
+
+function gpu_func(f, args)
+    cg = GPUCodegenContext(f, args)
+    region = Brutus.generate(cg, emit_region=true)
+    input_types = IR.Type[
+            IR.type(IR.argument(Brutus.entryblock(cg), i))
+            for i in 1:IR.nargs(Brutus.entryblock(cg))]
+    result_types = IR.Type[IR.Type.(Brutus.unpack(Brutus.returntype(cg)))...]
+    ftype = IR.FunctionType(input_types, result_types)
+    op = Dialects.gpu.func(;
+        function_type=ftype,
+        body=region
+    )
+    IR.attr!(op, "sym_name", IR.Attribute("test"))
+end
+
+function gpu_module(funcs::Vector{IR.Operation})
+    block = IR.Block()
+    for f in funcs
+        push!(block, f)
+    end
+    push!(block, Dialects.gpu.module_end())
+    bodyRegion = IR.Region()
+    push!(bodyRegion, block)
+    op = Dialects.gpu.module_(;
+        bodyRegion,
+    )
+    IR.attr!(op, "sym_name", IR.Attribute("test"))
+    op
+end
+
+struct LiteralType{T}
+    value::IR.Value
+end
+
+LiteralType(value::IR.Value) = LiteralType{IR.type(value)}(value)
+LiteralType(type_expr::String) = LiteralType{parse(IR.Type, type_expr)}
+IR.Type(::Type{LiteralType{T}}) where T = T
+
+
+
+op = gpu_module([
+    IR.attr!(
+        gpu_func(vadd, Tuple{memref{f32, 1}, memref{f32, 1}, memref{f32, 1}})
+        , "gpu.kernel", IR.UnitAttribute()),
+    ]) |> Brutus.simplify
+
+mod = IR.Module()
+push!(IR.body(mod), op)
+attr!(IR.Operation(mod), "gpu.container_module", IR.UnitAttribute())
+
+mod = parse(IR.Module, """
+"builtin.module"() ({
+  "gpu.module"() ({
+    "gpu.func"() <{function_type = (memref<10xf32, 1>, memref<10xf32, 1>, memref<10xf32, 1>) -> ()}> ({
+    ^bb0(%arg0: memref<10xf32, 1>, %arg1: memref<10xf32, 1>, %arg2: memref<10xf32, 1>):
+      %0 = "index.constant"() <{value = 0 : index}> : () -> index
+      %1 = "gpu.block_id"() <{dimension = #gpu<dim x>}> : () -> index
+      %2 = "arith.addi"(%1, %0) <{overflowFlags = #arith.overflow<none>}> : (index, index) -> index
+      %3 = "gpu.block_dim"() <{dimension = #gpu<dim x>}> : () -> index
+      %4 = "arith.addi"(%3, %0) <{overflowFlags = #arith.overflow<none>}> : (index, index) -> index
+      %5 = "index.mul"(%2, %4) : (index, index) -> index
+      %6 = "gpu.thread_id"() <{dimension = #gpu<dim x>}> : () -> index
+      %7 = "index.add"(%6, %0) : (index, index) -> index
+      %8 = "index.add"(%5, %7) : (index, index) -> index
+      %9 = "index.sub"(%8, %0) : (index, index) -> index
+      %10 = "memref.load"(%arg0, %9) : (memref<10xf32, 1>, index) -> f32
+      %11 = "memref.load"(%arg1, %9) : (memref<10xf32, 1>, index) -> f32
+      %12 = "arith.addf"(%10, %11) <{fastmath = #arith.fastmath<none>}> : (f32, f32) -> f32
+      "memref.store"(%12, %arg2, %9) : (f32, memref<10xf32, 1>, index) -> ()
+      "gpu.return"() : () -> ()
+    }) {gpu.kernel, sym_name = "test"} : () -> ()
+    "gpu.module_end"() : () -> ()
+  }) {sym_name = "test"} : () -> ()
+}) {gpu.container_module} : () -> ()
+""")
+IR.Operation(mod) |> Brutus.simplify
+
+
+mod
+
+mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target,gpu-to-llvm")
+mlir_opt(mod, "reconcile-unrealized-casts")
+op = first(IR.OperationIterator(first(IR.BlockIterator(first(IR.RegionIterator(IR.Operation(mod)))))))
+
+data = API.mlirSerializeGPUModuleOp(op)
+
+print(String(data))
+
+using CUDA
+
+md = CUDA.CuModule(data.data)
+vadd_cu = CuFunction(md, "test")
+
+a = rand(Float32, 10)
+b = rand(Float32, 10)
+ad = CuArray(a)
+bd = CuArray(b)
+
+
+
+# Addition
+let
+    c = zeros(Float32, 10)
+    c_d = CuArray(c)
+    null = CuPtr{Cfloat}(0);
+    cudacall(vadd_cu,
+             (CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
+              CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
+              CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}),
+              null, ad, null, null, null,
+              null, bd, null, null, null,
+              null, c_d, null, null, null;
+             threads=10)
+    c = Array(c_d)
+    c ≈ a+b
+end
+
+
+# open("compiled.out", "w") do file
+#     write(file, Base.unsafe_wrap(Vector{Int8}, pointer(data.data), Int(data.length), own=false))
+# end
+
