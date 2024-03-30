@@ -31,22 +31,22 @@ Brutus.BoolTrait(::Type{<: i1}) = Brutus.Boollike()
 @mlirfunction Base.:/(a::i64, b::i64)::i64 = i64(arith.divsi(a, b))
 @mlirfunction Base.:>(a::i64, b::i64)::i1 = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
 @mlirfunction Base.:>=(a::i64, b::i64)::i1 = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
-@mlirfunction function Base.getindex(A::memref{T}, i::Int)::T where T
+@mlirfunction function Base.getindex(A::Types.MLIRMemref{T}, i::Int)::T where T
     # this method can only be called with constant i since we assume arguments to `code_mlir` to be MLIR types, not Julia types.
     i = Types.index(Dialects.index.constant(; value=Attribute(i, IR.IndexType())) |> IR.result)
     A[i]
 end
-@mlirfunction function Base.getindex(A::memref{T, 1}, i::Types.index)::T where T
+@mlirfunction function Base.getindex(A::Types.MLIRMemref{T, 1}, i::Types.index)::T where T
     oneoff = Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
     new_index = Dialects.index.sub(i, oneoff) |> IR.result
     T(Dialects.memref.load(A, [new_index]) |> IR.result)
 end
-@mlirfunction function Base.setindex!(A::memref{T, 1}, v, i::Int)::T where {T}
+@mlirfunction function Base.setindex!(A::Types.MLIRMemref{T, 1}, v, i::Int)::T where {T}
     # this method can only be called with constant i since we assume arguments to `code_mlir` to be MLIR types, not Julia types.
     i = Types.index(Dialects.index.constant(; value=Attribute(i, IR.IndexType())) |> IR.result)
     A[i] = v
 end
-@mlirfunction function Base.setindex!(A::memref{T, 1}, v::T, i::Types.index)::T where T
+@mlirfunction function Base.setindex!(A::Types.MLIRMemref{T, 1}, v::T, i::Types.index)::T where T
     oneoff = Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
     new_index = Dialects.index.sub(i, oneoff) |> IR.result
     Dialects.memref.store(v, A, [new_index])
@@ -72,11 +72,11 @@ function threadIdx()::@NamedTuple{x::index, y::index, z::index}
 end
 
 @mlirfunction function blockIdx()::@NamedTuple{x::index, y::index, z::index}
-    oneoff = MLIR.Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
+    oneoff = index(MLIR.Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
     indices = map(('x', 'y', 'z')) do d
         dimension = parse(IR.Attribute, "#gpu<dim $d>")
-        i = gpu.block_id(; dimension) |> IR.result
-        index(arith.addi(i, oneoff) |> IR.result)
+        i = index(gpu.block_id(; dimension) |> IR.result)
+        i + oneoff
     end
     return (; x=indices[1], y=indices[2], z=indices[3])
 end
@@ -92,40 +92,49 @@ end
 end
 
 
-Brutus.generate(Tuple{i64, i64}) do a, b
-    a>b ? a : b
+Base.promote_rule(::Type{T}, ::Type{I}) where {T<:Brutus.Types.MLIRInteger, I<:Integer} = T
+
+@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T <: Brutus.Types.MLIRInteger}
+    op = arith.constant(value=Attribute(x), result=IR.Type(T))
+    T(IR.result(op))
+end
+
+Base.code_ircode(Tuple{i64}, interp=Brutus.MLIRInterpreter()) do a
+    a+2
+end
+
+Brutus.generate(Tuple{i64}) do a
+    Base.convert(i64, 2)
+    # a+2
 end
 
 
-Brutus.generate(Tuple{i64, i64}) do a, b
-    if (a>b)
-        return a*(a+b)
-    else
-        return a-b
-    end
+Base.promote_rule(::Type{T}, ::Type{I}) where {T<:Types.index, I<:Integer} = Types.index
+@mlirfunction function Base.convert(::Type{Types.index}, x::Integer)::Types.index
+    # @info "converting $x to type index"
+    op = Dialects.index.constant(value=Attribute(x, IR.Type(Types.index)), result=IR.Type(Types.index))
+    Types.index(IR.result(op))
 end
 
-Base.code_ircode(Tuple{i64, i64}, interp=Brutus.MLIRInterpreter()) do a, b
-    a>b ? a : b
+Base.code_ircode(Tuple{Types.index, Int}, interp=Brutus.MLIRInterpreter()) do a, b
+    Base.convert(Types.index, 2)
+    # Base.promote(a, b)
+    a-b
 end
 
-Brutus.generate(Tuple{}) do 
-    threadIdx().x, blockDim().y
-end
-
-Base.code_ircode(Tuple{}, interp=Brutus.MLIRInterpreter()) do 
-    threadIdx().x, blockDim().y
-end
 
 function vadd(a, b, c)
-    i = (blockIdx().x) * blockDim().x + threadIdx().x
+    i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     c[i] = a[i] + b[i]
     return
 end
 
-# Base.code_ircode(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}, interp=Brutus.MLIRInterpreter())
+Base.code_ircode(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}, interp=Brutus.MLIRInterpreter())
 
 @time Brutus.generate(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}})
+
+T_in = Brutus.Types.MLIRMemref{f32, 1, nothing, 1, nothing, 0}
+@time Brutus.generate(vadd, Tuple{T_in, T_in, T_in})
 
 struct GPUCodegenContext <: Brutus.AbstractCodegenContext
     cg::Brutus.CodegenContext
@@ -220,51 +229,15 @@ function gpu_module(funcs::Vector{IR.Operation})
     op
 end
 
-struct LiteralType{T}
-    value::IR.Value
-end
-
-LiteralType(value::IR.Value) = LiteralType{IR.type(value)}(value)
-LiteralType(type_expr::String) = LiteralType{parse(IR.Type, type_expr)}
-IR.Type(::Type{LiteralType{T}}) where T = T
-
-
-
 op = gpu_module([
     IR.attr!(
-        gpu_func(vadd, Tuple{memref{f32, 1}, memref{f32, 1}, memref{f32, 1}})
+        gpu_func(vadd, Tuple{T_in, T_in, T_in})
         , "gpu.kernel", IR.UnitAttribute()),
     ]) |> Brutus.simplify
 
 mod = IR.Module()
 push!(IR.body(mod), op)
 attr!(IR.Operation(mod), "gpu.container_module", IR.UnitAttribute())
-
-mod = parse(IR.Module, """
-"builtin.module"() ({
-  "gpu.module"() ({
-    "gpu.func"() <{function_type = (memref<10xf32, 1>, memref<10xf32, 1>, memref<10xf32, 1>) -> ()}> ({
-    ^bb0(%arg0: memref<10xf32, 1>, %arg1: memref<10xf32, 1>, %arg2: memref<10xf32, 1>):
-      %0 = "index.constant"() <{value = 0 : index}> : () -> index
-      %1 = "gpu.block_id"() <{dimension = #gpu<dim x>}> : () -> index
-      %2 = "arith.addi"(%1, %0) <{overflowFlags = #arith.overflow<none>}> : (index, index) -> index
-      %3 = "gpu.block_dim"() <{dimension = #gpu<dim x>}> : () -> index
-      %4 = "arith.addi"(%3, %0) <{overflowFlags = #arith.overflow<none>}> : (index, index) -> index
-      %5 = "index.mul"(%2, %4) : (index, index) -> index
-      %6 = "gpu.thread_id"() <{dimension = #gpu<dim x>}> : () -> index
-      %7 = "index.add"(%6, %0) : (index, index) -> index
-      %8 = "index.add"(%5, %7) : (index, index) -> index
-      %9 = "index.sub"(%8, %0) : (index, index) -> index
-      %10 = "memref.load"(%arg0, %9) : (memref<10xf32, 1>, index) -> f32
-      %11 = "memref.load"(%arg1, %9) : (memref<10xf32, 1>, index) -> f32
-      %12 = "arith.addf"(%10, %11) <{fastmath = #arith.fastmath<none>}> : (f32, f32) -> f32
-      "memref.store"(%12, %arg2, %9) : (f32, memref<10xf32, 1>, index) -> ()
-      "gpu.return"() : () -> ()
-    }) {gpu.kernel, sym_name = "test"} : () -> ()
-    "gpu.module_end"() : () -> ()
-  }) {sym_name = "test"} : () -> ()
-}) {gpu.container_module} : () -> ()
-""")
 IR.Operation(mod) |> Brutus.simplify
 
 
@@ -288,27 +261,21 @@ b = rand(Float32, 10)
 ad = CuArray(a)
 bd = CuArray(b)
 
-
-
-# Addition
-let
-    c = zeros(Float32, 10)
-    c_d = CuArray(c)
-    null = CuPtr{Cfloat}(0);
-    cudacall(vadd_cu,
-             (CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
-              CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
-              CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}),
-              null, ad, null, null, null,
-              null, bd, null, null, null,
-              null, c_d, null, null, null;
-             threads=10)
-    c = Array(c_d)
-    c ≈ a+b
-end
+c = zeros(Float32, 10)
+c_d = CuArray(c)
+null = CuPtr{Cfloat}(0);
+cudacall(vadd_cu,
+            (CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
+            CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
+            CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}),
+            null, ad, null, null, null,
+            null, bd, null, null, null,
+            null, c_d, null, null, null;
+            threads=10)
+c = Array(c_d)
+c ≈ a+b
 
 
 # open("compiled.out", "w") do file
 #     write(file, Base.unsafe_wrap(Vector{Int8}, pointer(data.data), Int(data.length), own=false))
 # end
-

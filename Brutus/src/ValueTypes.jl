@@ -16,21 +16,38 @@ MLIRValueTrait(::Type{<:MLIRArrayLike}) = Convertible()
 Base.show(io::IO, a::A) where {A<:MLIRArrayLike{T, N}} where {T, N} = print(io, "$A[...]")
 Base.show(io::IO, ::MIME{Symbol("text/plain")}, a::A) where {A<:MLIRArrayLike{T, N}} where {T, N} = print(io, "$A[...]")
 
-struct MLIRMemref{T, N} <: MLIRArrayLike{T, N}
+struct MLIRMemref{T, N, Shape, Memspace, Stride, Offset} <: MLIRArrayLike{T, N}
     value::Value
 end
-MLIR.IR.Type(::Type{MLIRMemref{T, N}}) where {T, N} = IR.Type(mlirMemRefTypeGet(
-    IR.Type(T),
-    N,
-    Int[mlirShapedTypeGetDynamicSize() for _ in 1:N],
-    Attribute(mlirStridedLayoutAttrGet(
-        context().context,
-        mlirShapedTypeGetDynamicSize(),
+function MLIR.IR.Type(::Type{MLIRMemref{T, N, Shape, Memspace, Stride, Offset}}) where {T, N, Shape, Memspace, Stride, Offset}
+    memspace(a::IR.Attribute) = a
+    memspace(::Nothing) = Attribute()
+    memspace(i::Integer) = Attribute(i)
+
+    shape(::Nothing) = Int[mlirShapedTypeGetDynamicSize() for _ in 1:N]
+    shape(s) = Int[s.parameters...]
+
+    # default to column-major layout
+    stride(::Nothing) = Int[1, [mlirShapedTypeGetDynamicSize() for _ in 2:N]...]
+    stride(s) = shape(s)
+
+    offset(::Nothing) = mlirShapedTypeGetDynamicSize()
+    offset(i::Integer) = i
+
+    IR.Type(mlirMemRefTypeGet(
+        IR.Type(T),
         N,
-        Int[1, [mlirShapedTypeGetDynamicSize() for _ in 2:N]...])),
-    Attribute() # no particular memory space
-))
-const memref = MLIRMemref
+        shape(Shape),
+        Attribute(mlirStridedLayoutAttrGet(
+            context().context,
+            offset(Offset),
+            N,
+            stride(Stride))),
+        memspace(Memspace)
+    ))
+
+end
+const memref{T, N} = MLIRMemref{T, N, nothing, nothing, nothing, 0}
 
 struct MLIRTensor{T, N} <: MLIRArrayLike{T, N}
     value::Value
