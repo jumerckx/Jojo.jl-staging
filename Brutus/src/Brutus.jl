@@ -5,15 +5,12 @@ using MLIR: API
 using MLIR.Dialects: arith, func, cf, memref, index, builtin, llvm, ub
 using Core: PhiNode, GotoNode, GotoIfNot, SSAValue, Argument, ReturnNode, PiNode
 
-const BrutusScalarType = Union{Bool, Int64, UInt64, Int32, UInt32, Float16, Float32, Float64, UInt64}
-const BrutusType = Union{BrutusScalarType, Array{BrutusScalarType}}
-
 include("MemRef.jl")
 include("pass.jl")
 include("overlay.jl")
 include("abstract.jl")
 include("codegencontext.jl")
-include("ValueTypes.jl")
+include("library/Library.jl")
 
 struct InstructionContext{I}
     args::Vector
@@ -24,14 +21,15 @@ end
 
 
 emit(cg::AbstractCodegenContext, ic::InstructionContext{F}) where {F} = mlircompilationpass() do 
-        # F(get_value.(Ref(cg), ic.args)...)
-        # work around https://github.com/JuliaDebug/CassetteOverlay.jl/issues/39:
-        args = []
-        for arg in ic.args
-            push!(args, get_value(cg, arg))
-        end
-        cg, F(args...)
+    # F(get_value.(Ref(cg), ic.args)...)
+    # work around https://github.com/JuliaDebug/CassetteOverlay.jl/issues/39:
+    args = []
+    for arg in ic.args
+        push!(args, get_value(cg, arg))
     end
+    @warn F, args
+    cg, F(args...)
+end
 
 
 function emit(cg::AbstractCodegenContext, ic::InstructionContext{Base.getfield})
@@ -55,12 +53,6 @@ function emit(cg::AbstractCodegenContext, ic::InstructionContext{Core.tuple})
         # This doesn't necessarily lead to an error, as long as the tuple values are not used in emitted MLIR. 
         return cg, Tuple(inputs)
     end
-end
-function emit(cg::AbstractCodegenContext, ic::InstructionContext{Core.ifelse})
-    T = get_type(cg, ic.args[2])
-    @assert T == get_type(cg, ic.args[3]) "Branches in Core.ifelse should have the same type."
-    condition, true_value, false_value = get_value.(Ref(cg), ic.args)
-    return cg, IR.result(push!(currentblock(cg), arith.select(condition, true_value, false_value; result=IR.get_type(true_value), location=ic.loc)))
 end
 function emit(cg::AbstractCodegenContext, ic::InstructionContext{Base.throw_boundserror})
     @debug "Ignoring potential boundserror while generating MLIR."
@@ -276,8 +268,9 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                     )
             elseif Meta.isexpr(inst, :new)
                 @info ir(cg)
-                args = get_value.(Ref(cg), inst.args[2:end])
-                values(cg)[sidx] = __new__(inst.args[1], args...)
+                args = get_value.(Ref(cg), inst.args)
+                @info inst.args args
+                values(cg)[sidx] = __new__(args...)
             elseif Meta.isexpr(inst, :code_coverage_effect)
                 # Skip
             elseif Meta.isexpr(inst, :boundscheck)

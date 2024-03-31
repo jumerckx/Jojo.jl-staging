@@ -134,31 +134,11 @@ function get_value(cg::AbstractCodegenContext, x)
         @assert isassigned(args(cg), x.n) "value $x was not assigned"
         return args(cg)[x.n]
         # return IR.argument(cg.entryblock, x.n - 1)
-    elseif x isa BrutusType
-        return x
-    elseif (x isa Type) && (x <: BrutusType)
-        #TODO: clean-up
-        error("this shouldn't be hit anymore")
-        return IR.Type(x)
     elseif x == GlobalRef(Main, :nothing) # This might be something else than Main sometimes?
         return IR.Type(Nothing)
     else
         # error("could not use value $x inside MLIR")
         @debug "Value could not be converted to MLIR: $x, of type $(typeof(x))."
         return x
-    end
-end
-
-function get_type(cg::CodegenContext, x)
-    if x isa Core.SSAValue
-        return cg.ir.stmts.type[x.id]
-    elseif x isa Core.Argument
-        return cg.ir.argtypes[x.n]
-    elseif x isa BrutusType
-        return typeof(x)
-    else
-        @debug "Could not get type for $x, of type $(typeof(x))."
-        return nothing
-        # error("could not get type for $x, of type $(typeof(x))")
     end
 end
