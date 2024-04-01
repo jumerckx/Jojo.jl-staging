@@ -55,14 +55,12 @@ function maps(output_indices, inputs_indices)
     return indexing_maps, iterator_types
 end
 
-struct Einsum{I, O} end
-@generated function maps(::Einsum{I, O}) where {I, O}
-    return maps(O, I)
+struct Einsum{T}
+    desc::Pair{T}
 end
-function Einsum(desc::Pair{T}) where T
-    return Einsum{desc.first, desc.second}()
+function maps(e::Einsum)
+    return maps(e.desc.second, e.desc.first)
 end
-
 
 import Brutus: generate_return, generate_function, region, CodegenContext
 
@@ -92,7 +90,7 @@ generate(
     )
 )
 
-@mlirfunction function (E::Einsum{I, O})(Y::T, XS::Vararg{tensor})::T where {I, O, T<:tensor}
+@mlirfunction function (E::Einsum)(Y::T, XS::Vararg{tensor})::T where {T<:tensor}
     indexing_maps, iterator_types = maps(E)
     cg = @nonoverlay CodegenContext{LinalgBody}(
         (xs, y)-> execute_region(i64) do 
@@ -116,4 +114,4 @@ end
 generate(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
     f(Y, A, B)
-end 
+end |> simplify

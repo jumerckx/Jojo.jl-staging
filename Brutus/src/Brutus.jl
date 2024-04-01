@@ -200,9 +200,7 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 if val_type == Core.Const(nothing)
                     val_type = Nothing
                 end
-                ic = InstructionContext{called_func}(args, val_type, loc)
-
-                argvalues = get_value.(Ref(cg), ic.args)
+                argvalues = get_value.(Ref(cg), args)
 
                 # special case mlir_bool_conversion to just forward the argument
                 if called_func == mlir_bool_conversion
