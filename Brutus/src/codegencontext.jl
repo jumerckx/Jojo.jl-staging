@@ -1,4 +1,5 @@
 using MLIR: IR, API
+using MLIR.Dialects: func
 
 abstract type AbstractCodegenContext end
 Base.values(cg::T) where {T<:AbstractCodegenContext} = error("values not implemented for type $T")
@@ -15,8 +16,12 @@ currentblock(cg::T) where {T<:AbstractCodegenContext} = error("currentblock not 
 generate_return(cg::T, values; location) where {T<:AbstractCodegenContext} = error("generate_return not implemented for type $T")
 generate_goto(cg::T, args, dest; location) where {T<:AbstractCodegenContext} = error("generate_goto not implemented for type $T")
 generate_gotoifnot(cg::T, cond; true_args, false_args, true_dest, false_dest, location) where {T<:AbstractCodegenContext} = error("generate_gotoifnot not implemented for type $T")
+generate_function(cg::T, region) where {T<:AbstractCodegenContext} = error("generate_function not implemented for type $T")
 
-mutable struct CodegenContext <: AbstractCodegenContext
+abstract type Default end
+
+mutable struct CodegenContext{T} <: AbstractCodegenContext
+    f::Function
     region::Region
     const blocks::Vector{Block}
     const entryblock::Block
@@ -27,7 +32,8 @@ mutable struct CodegenContext <: AbstractCodegenContext
     const args::Vector
 
 
-    function CodegenContext(;
+    function CodegenContext{T}(;
+            f::Function,
             region::Region,
             blocks::Vector{Block},
             entryblock::Block,
@@ -35,13 +41,15 @@ mutable struct CodegenContext <: AbstractCodegenContext
             ir::Core.Compiler.IRCode,
             ret::Type,
             values::Vector,
-            args::Vector)
-        cg = new(region, blocks, entryblock, currentblockindex, ir, ret, values, args)
+            args::Vector) where {T}
+        cg = new{T}(f, region, blocks, entryblock, currentblockindex, ir, ret, values, args)
         return cg
     end
 end
 
-function CodegenContext(f, types)
+CodegenContext(f, types) = CodegenContext{Default}(f, types)
+
+function CodegenContext{T}(f, types) where T
     ir, ret = Core.Compiler.code_ircode(f, types; interp=MLIRInterpreter()) |> only
 
     types = ir.argtypes[begin+1:end]
@@ -65,7 +73,8 @@ function CodegenContext(f, types)
         args[i+1] = reinterpret(argtype, Tuple(temp))
     end
 
-    CodegenContext(;
+    CodegenContext{T}(;
+        f,
         region=Region(),
         blocks,
         entryblock=entryblock,
@@ -86,10 +95,32 @@ currentblockindex(cg::CodegenContext) = cg.currentblockindex
 setcurrentblockindex!(cg::CodegenContext, i) = cg.currentblockindex = i
 returntype(cg::CodegenContext) = cg.ret
 ir(cg::CodegenContext) = cg.ir
+currentblock(cg::CodegenContext) = cg.blocks[cg.currentblockindex]
 generate_return(cg::CodegenContext, values; location) = func.return_(values; location)
 generate_goto(cg::CodegenContext, args, dest; location) = cf.br(args; dest, location)
-generate_gotoifnot(cg::CodegenContext, cond; true_args, false_args, true_dest, false_dest, location) = cf.cond_br(cond, true_args, false_args; trueDest=true_dest, falseDest=false_dest, location)
-currentblock(cg::CodegenContext) = cg.blocks[cg.currentblockindex]
+generate_gotoifnot(
+    cg::CodegenContext, cond;
+    true_args, false_args, true_dest, false_dest, location
+    )= cf.cond_br(
+        cond, true_args, false_args;
+        trueDest=true_dest, falseDest=false_dest, location
+        )
+function generate_function(cg::CodegenContext)
+    body = region(cg)
+    input_types = IR.Type[IR.type(IR.argument(entryblock(cg), i)) for i in 1:IR.nargs(entryblock(cg))]
+
+    # getting result types requires return type to be fully inferred and convertible to MLIR:
+    result_types = IR.Type[IR.Type.(unpack(returntype(cg)))...]
+    function_type = IR.FunctionType(input_types, result_types)
+    op = func.func_(;
+        sym_name=string(nameof(cg.f)),
+        function_type,
+        body,
+    )
+    IR.attr!(op, "llvm.emit_c_interface", API.mlirUnitAttrGet(IR.context()))
+    IR.verify(op)
+    return op
+end
 
 _has_context() = haskey(task_local_storage(), :CodegenContext) &&
                  !isempty(task_local_storage(:CodegenContext))

@@ -298,38 +298,10 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
             push!(b, generate_goto(cg, args, dest; location=loc))
         end
     end
-    # return region(cg)
-    if emit_region
-    #     println("emitting region")
-    #     @show region(cg)
-    #     println(region(cg).region.ptr)
-        return region(cg)
-    else
-        input_types = IR.Type[
-            IR.type(IR.argument(entryblock(cg), i))
-            for i in 1:IR.nargs(entryblock(cg))
-        ]
-        result_types = IR.Type[IR.Type.(unpack(returntype(cg)))...]
-        ftype = IR.FunctionType(input_types, result_types)
-        op = IR.create_operation(
-            "func.func",
-            Location();
-            attributes = [
-                IR.NamedAttribute("sym_name", IR.Attribute(string("test"))),
-                IR.NamedAttribute("function_type", IR.Attribute(ftype)),
-                IR.NamedAttribute("llvm.emit_c_interface", IR.Attribute(API.mlirUnitAttrGet(IR.context())))
-            ],
-            owned_regions = Region[region(cg)],
-            result_inference=false,
-        )
+    
+    return generate_function(cg)
 
-        IR.verifyall(op)    
-        if do_simplify && IR.verify(op)
-            simplify(op)
-        end
-        return op
-    end
-    end
+    end # codegencontext
 end
 
 end # module Brutus

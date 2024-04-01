@@ -1,8 +1,9 @@
 import MLIR.IR
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
-using MLIR.Dialects
+import MLIR.Dialects
 using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet
-using ..Brutus: @mlirfunction
+using ..Brutus: @mlirfunction, Boollike
+import ..Brutus: BoolTrait
 
 ### int ###
 struct MLIRInteger{N} <: Integer
@@ -14,7 +15,7 @@ MLIRValueTrait(::Type{<:MLIRInteger}) = Convertible()
 IR.Type(::Type{MLIRInteger{N}}) where {N} = IR.Type(mlirIntegerTypeGet(context(), N))
 
 const i1 = MLIRInteger{1}
-BoolTrait(::Type{<: i1}) = Boollike()
+BoolTrait(::Type{i1}) = Boollike()
 
 const i8 = MLIRInteger{8}
 const i16 = MLIRInteger{16}
@@ -30,6 +31,13 @@ const i64 = MLIRInteger{64}
 @mlirfunction (Base.:>=(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sge))
 @mlirfunction (Base.:<(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.slt))
 @mlirfunction (Base.:<=(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sle))
+
+# promote constant julia integers to int
+Base.promote_rule(::Type{T}, ::Type{I}) where {T<:MLIRInteger, I<:Integer} = T
+@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T<:MLIRInteger}
+    op = Dialects.arith.constant(value=Attribute(x), result=IR.Type(T))
+    T(result(op))
+end
 
 ### float ###
 abstract type MLIRFloat <: AbstractFloat end
@@ -59,12 +67,6 @@ IR.Type(::Type{MLIRF32}) = mlirF32TypeGet(context())
 # @mlirfunction Base.:<(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
 # @mlirfunction Base.:<=(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
 
-# promote constant julia integers to int
-Base.promote_rule(::Type{T}, ::Type{I}) where {T<:MLIRInteger, I<:Integer} = T
-@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T<:MLIRInteger}
-    op = arith.constant(value=Attribute(x), result=IR.Type(T))
-    T(result(op))
-end
 
 ### index  ###
 struct MLIRIndex <: Integer
