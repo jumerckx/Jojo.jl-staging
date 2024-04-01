@@ -27,7 +27,6 @@ emit(cg::AbstractCodegenContext, ic::InstructionContext{F}) where {F} = mlircomp
     for arg in ic.args
         push!(args, get_value(cg, arg))
     end
-    @warn F, args
     cg, F(args...)
 end
 
@@ -267,9 +266,7 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                     generate_return(cg, returnvalue; location=loc)
                     )
             elseif Meta.isexpr(inst, :new)
-                @info ir(cg)
                 args = get_value.(Ref(cg), inst.args)
-                @info inst.args args
                 values(cg)[sidx] = __new__(args...)
             elseif Meta.isexpr(inst, :code_coverage_effect)
                 # Skip

@@ -126,8 +126,8 @@ vadd_cu = CuFunction(md, "vadd")
 
 a = rand(Float32, 10)
 b = rand(Float32, 10)
-ad = CuArray(a)
-bd = CuArray(b)
+a_d = CuArray(a)
+b_d = CuArray(b)
 
 c = zeros(Float32, 10)
 c_d = CuArray(c)
@@ -136,8 +136,8 @@ cudacall(vadd_cu,
             (CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
             CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
             CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}),
-            null, ad, null, null, null,
-            null, bd, null, null, null,
+            null, a_d, null, null, null,
+            null, b_d, null, null, null,
             null, c_d, null, null, null;
             threads=10)
 c = Array(c_d)

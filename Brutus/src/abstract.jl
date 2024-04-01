@@ -1,4 +1,9 @@
-intrinsic(T)::T = error("MLIR intrinsics can't be executed in a regular Julia context.")
+@noinline function intrinsic(T)::T
+    # prevent type inference:
+    invokelatest(error, "MLIR intrinsics can't be executed in a regular Julia context.")
+
+    Base.inferencebarrier(nothing)::T
+end
 
 abstract type BoolTrait end
 struct NonBoollike <: BoolTrait end
@@ -135,15 +140,6 @@ CC.may_optimize(interp::MLIRInterpreter) = true
 CC.may_compress(interp::MLIRInterpreter) = true
 CC.may_discard_trees(interp::MLIRInterpreter) = true
 CC.verbose_stmt_info(interp::MLIRInterpreter) = false
-
-# Specialize on intrinsic(T) to return T for type inference
-function CC.abstract_call_gf_by_type(interp::MLIRInterpreter, f::typeof(intrinsic), arginfo::CC.ArgInfo, si::CC.StmtInfo, @nospecialize(atype),
-    sv::CC.AbsIntState, max_methods::Int)
-    matches = CC.find_matching_methods(CC.typeinf_lattice(interp), arginfo.argtypes, atype, CC.method_table(interp),
-        CC.InferenceParams(interp).max_union_splitting, max_methods)
-    @assert length(arginfo.argtypes) == 2
-    CC.CallMeta(arginfo.argtypes[2].val, Any, CC.Effects(; consistent=CC.ALWAYS_TRUE, nonoverlayed=!CC.isoverlayed(CC.method_table(interp))), matches.info)
-end
 
 ## utils
 
