@@ -113,7 +113,7 @@ function MLIRInterpreter(world::UInt;
                              code_cache, inf_cache,
                              inf_params, opt_params)
 end
-MLIRInterpreter(opt_params=CC.OptimizationParams()) = MLIRInterpreter(
+MLIRInterpreter(opt_params=CC.OptimizationParams(#= inline_cost_threshold=... =#)) = MLIRInterpreter(
     Base.get_world_counter();
     code_cache=global_ci_cache,
     inf_params=CC.InferenceParams(),

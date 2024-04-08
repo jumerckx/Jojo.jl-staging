@@ -100,30 +100,12 @@ function collect_value_arguments(ir, from, to)
     values
 end
 
-unpack(T) = unpack(IR.MLIRValueTrait(T), T)
-unpack(::IR.Convertible, T) = (T, )
-function unpack(::IR.NonConvertible, T)
-    @assert isbitstype(T) "Cannot unpack type $T that is not `isbitstype`"
-    fc = fieldcount(T)
-    if (fc == 0)
-        if (sizeof(T) == 0)
-            return []
-        else
-            error("Unable to unpack NonConvertible type $T any further")
-        end
-    end
-    unpacked = []
-    for i in 1:fc
-        ft = fieldtype(T, i)
-        append!(unpacked, unpack(ft))
-    end
-    return unpacked
-end
-
 macro __splatnew__(T, args)
     esc(Expr(:splatnew, T, args))
 end
-@inline __new__(T, args...) = @__splatnew__(T, args)
+unwrap(x) = x
+unwrap(q::QuoteNode) = q.value
+@inline __new__(T, args...) = @__splatnew__(T, unwrap.(args))
 
 generate(f, types; emit_region=false, skip_return=false, do_simplify=true) = generate(CodegenContext(f, types); emit_region, skip_return, do_simplify)
 
@@ -298,5 +280,9 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
 
     end # codegencontext
 end
+@overlay MLIRCompilation function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=false, do_simplify=true)
+    return @nonoverlay generate(cg; emit_region, skip_return, do_simplify)
+end
+
 
 end # module Brutus

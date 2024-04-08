@@ -139,8 +139,8 @@ uuid = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 version = "0.11.1+0"
 
 [[deps.CassetteOverlay]]
-deps = ["Test"]
-git-tree-sha1 = "fd33320b820b65c993a2e514aa11105152fdf0e9"
+deps = ["Logging", "Test"]
+path = "/home/jumerckx/.julia/dev/CassetteOverlay"
 uuid = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
 version = "0.1.8"
 

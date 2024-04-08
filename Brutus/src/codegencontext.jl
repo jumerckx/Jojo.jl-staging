@@ -1,6 +1,26 @@
 using MLIR: IR, API
 using MLIR.Dialects: func
 
+unpack(T) = unpack(IR.MLIRValueTrait(T), T)
+unpack(::IR.Convertible, T) = (T, )
+function unpack(::IR.NonConvertible, T)
+    @assert isbitstype(T) "Cannot unpack type $T that is not `isbitstype`"
+    fc = fieldcount(T)
+    if (fc == 0)
+        if (sizeof(T) == 0)
+            return []
+        else
+            error("Unable to unpack NonConvertible type $T any further")
+        end
+    end
+    unpacked = []
+    for i in 1:fc
+        ft = fieldtype(T, i)
+        append!(unpacked, unpack(ft))
+    end
+    return unpacked
+end
+
 abstract type AbstractCodegenContext end
 Base.values(cg::T) where {T<:AbstractCodegenContext} = error("values not implemented for type $T")
 args(cg::T) where {T<:AbstractCodegenContext} = error("args not implemented for type $T")

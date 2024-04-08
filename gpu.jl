@@ -2,6 +2,7 @@ using MLIR
 includet("utils.jl")
 
 using Brutus.Library: index, f32, i64, memref, MLIRMemref
+using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
 import Brutus: MemRef, @mlirfunction, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
@@ -15,38 +16,6 @@ registerAllDialects!();
 mlirRegisterAllPasses()
 mlirRegisterAllLLVMTranslations(ctx.context)
 
-@mlirfunction function threadIdx(dim::Symbol)::index
-    oneoff = index(Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
-    
-    dimension = parse(IR.Attribute, "#gpu<dim $dim>")
-    i = index(gpu.thread_id(; dimension) |> IR.result)
-    i + oneoff
-end
-
-function threadIdx()::@NamedTuple{x::index, y::index, z::index}
-    (; x=threadIdx(:x), y=threadIdx(:y), z=threadIdx(:z))
-end
-
-@mlirfunction function blockIdx()::@NamedTuple{x::index, y::index, z::index}
-    oneoff = index(Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
-    indices = map(('x', 'y', 'z')) do d
-        dimension = parse(IR.Attribute, "#gpu<dim $d>")
-        i = index(gpu.block_id(; dimension) |> IR.result)
-        i + oneoff
-    end
-    return (; x=indices[1], y=indices[2], z=indices[3])
-end
-
-@mlirfunction function blockDim()::@NamedTuple{x::index, y::index, z::index}
-    oneoff = Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
-    indices = map(('x', 'y', 'z')) do d
-        dimension = parse(IR.Attribute, "#gpu<dim $d>")
-        i = gpu.block_dim(; dimension) |> IR.result
-        index(arith.addi(i, oneoff) |> IR.result)
-    end
-    return (; x=indices[1], y=indices[2], z=indices[3])
-end
-
 function vadd(a, b, c)
     i = (blockIdx().x - 1) * blockDim().x + threadIdx().x
     c[i] = a[i] + b[i]
@@ -57,48 +26,10 @@ Base.code_ircode(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}, in
 
 @time generate(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}})
 
-T_in = MLIRMemref{f32, 1, nothing, 1, nothing, 0}
+T_in = MLIRMemref{f32, 1, nothing, nothing, nothing, 0}
 @time generate(vadd, Tuple{T_in, T_in, T_in})
 
-import Brutus: generate_return, generate_function
-
-abstract type GPUFunc end
-function generate_return(cg::CodegenContext{GPUFunc}, values; location)
-    if (length(values) != 0)
-        error("GPU kernel should return Nothing, got values of type $(typeof(values))")
-    end
-    return Dialects.gpu.return_(values; location)
-end
-function generate_function(cg::CodegenContext{GPUFunc})
-    body = region(cg)
-    input_types = IR.Type[
-        IR.type(IR.argument(entryblock(cg), i))
-        for i in 1:IR.nargs(entryblock(cg))]
-    result_types = IR.Type[IR.Type.(unpack(returntype(cg)))...]
-    ftype = IR.FunctionType(input_types, result_types)
-    op = Dialects.gpu.func(;
-        function_type=ftype,
-        body
-    )
-    IR.attr!(op, "sym_name", IR.Attribute(String(nameof(cg.f))))
-end
-
 generate(CodegenContext{GPUFunc}(vadd, Tuple{memref{i64, 1}, memref{i64, 1}, memref{i64, 1}}))
-
-function gpu_module(funcs::Vector{IR.Operation}, name="gpu_module")
-    block = IR.Block()
-    for f in funcs
-        push!(block, f)
-    end
-    push!(block, Dialects.gpu.module_end())
-    bodyRegion = IR.Region()
-    push!(bodyRegion, block)
-    op = Dialects.gpu.module_(;
-        bodyRegion,
-    )
-    IR.attr!(op, "sym_name", IR.Attribute(name))
-    op
-end
 
 gpu_mod_op = gpu_module([
     IR.attr!(

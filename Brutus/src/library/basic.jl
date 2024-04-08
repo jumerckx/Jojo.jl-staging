@@ -1,9 +1,9 @@
 import MLIR.IR
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
 import MLIR.Dialects
-using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet
-using ..Brutus: @mlirfunction, Boollike
-import ..Brutus: BoolTrait
+using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet, mlirF16TypeGet
+using Brutus: @mlirfunction, Boollike
+import Brutus: BoolTrait
 
 ### int ###
 struct MLIRInteger{N} <: Integer
@@ -49,12 +49,17 @@ end
 struct MLIRF32 <: MLIRFloat
     value::Value
 end
+struct MLIRF16 <: MLIRFloat
+    value::Value
+end
 
 const f64 = MLIRF64
 const f32 = MLIRF32
+const f16 = MLIRF16
 
-IR.Type(::Type{MLIRF64}) = mlirF64TypeGet(context())
-IR.Type(::Type{MLIRF32}) = mlirF32TypeGet(context())
+IR.Type(::Type{MLIRF64}) = IR.Type(mlirF64TypeGet(context()))
+IR.Type(::Type{MLIRF32}) = IR.Type(mlirF32TypeGet(context()))
+IR.Type(::Type{MLIRF16}) = IR.Type(mlirF16TypeGet(context()))
 
 @mlirfunction (Base.:+(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.addf(a, b)|>result)
 @mlirfunction (Base.:-(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.subf(a, b)|>result)
