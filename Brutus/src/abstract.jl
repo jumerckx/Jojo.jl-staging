@@ -45,7 +45,6 @@ end
 
 function CC.get(wvc::WorldView{CodeCache}, mi::MethodInstance, default)
     # check the cache
-    global indent
     # Core.println("$(mi.def)")
     # display.(stacktrace())
     # Core.println("")
@@ -140,6 +139,122 @@ CC.may_optimize(interp::MLIRInterpreter) = true
 CC.may_compress(interp::MLIRInterpreter) = true
 CC.may_discard_trees(interp::MLIRInterpreter) = true
 CC.verbose_stmt_info(interp::MLIRInterpreter) = false
+
+struct MLIRIntrinsicCallInfo <: CC.CallInfo
+    info::CC.CallInfo
+    MLIRIntrinsicCallInfo(@nospecialize(info::CC.CallInfo)) = new(info)
+end
+CC.nsplit_impl(info::MLIRIntrinsicCallInfo) = CC.nsplit(info.info)
+CC.getsplit_impl(info::MLIRIntrinsicCallInfo, idx::Int) = CC.getsplit(info.info, idx)
+CC.getresult_impl(info::MLIRIntrinsicCallInfo, idx::Int) = CC.getresult(info.info, idx)
+
+
+function CC.abstract_call_gf_by_type(interp::MLIRInterpreter, @nospecialize(f), arginfo::CC.ArgInfo, si::CC.StmtInfo, @nospecialize(atype),
+    sv::CC.AbsIntState, max_methods::Int)
+
+    cm = @invoke CC.abstract_call_gf_by_type(interp::CC.AbstractInterpreter, f::Any,
+    arginfo::CC.ArgInfo, si::CC.StmtInfo, atype::Any, sv::CC.InferenceState, max_methods::Int)
+    
+    Core.println(f)
+    tt = Core.Compiler.argtypes_to_type(arginfo.argtypes)
+    world = CC.get_inference_world(interp)
+    method_table = CC.method_table(interp)
+    caller = sv
+
+    add_intrinsic_backedges(tt; world, method_table, caller)
+    
+    argtype_tuple = Tuple{map(_type, arginfo.argtypes)...}
+    
+    if is_primitive(argtype_tuple)
+        return CC.CallMeta(cm.rt, cm.exct, cm.effects, MLIRIntrinsicCallInfo(cm.info))
+    else
+        return cm
+    end
+end
+
+
+"""
+    _typeof(x)
+
+Central definition of typeof, which is specific to the use-required in this package.
+"""
+_typeof(x) = Base._stable_typeof(x)
+_typeof(x::Tuple) = Tuple{map(_typeof, x)...}
+_typeof(x::NamedTuple{names}) where {names} = NamedTuple{names, _typeof(Tuple(x))}
+
+_type(x) = x
+_type(x::CC.Const) = _typeof(x.val)
+_type(x::CC.PartialStruct) = x.typ
+_type(x::CC.Conditional) = Union{x.thentype, x.elsetype}
+
+is_primitive(::Any) = false
+
+macro is_primitive(sig)
+    return esc(:(Brutus.is_primitive(::Type{<:$sig}) = true))
+end
+
+is_primitive(::Type{<:Tuple{typeof(*), Integer, Integer}}) = true
+
+# @is_primitive Tuple{typeof(*), Int, Int}
+
+function CC.inlining_policy(interp::MLIRInterpreter,
+    @nospecialize(src), @nospecialize(info::CC.CallInfo), stmt_flag::UInt32)
+
+    if isa(info, MLIRIntrinsicCallInfo)
+        return nothing
+    else
+        return src
+    end
+end
+
+function add_intrinsic_backedges(@nospecialize(tt);
+                      world::UInt=Base.get_world_counter(),
+                      method_table::Union{Nothing,Core.Compiler.MethodTableView}=nothing,
+                      caller::CC.AbsIntState)
+    sig = Base.signature_type(Brutus.is_primitive, Tuple{Type{tt}})
+    mt = ccall(:jl_method_table_for, Any, (Any,), sig)
+    mt isa Core.MethodTable || return false
+    if method_table === nothing
+        method_table = Core.Compiler.InternalMethodTable(world)
+    end
+    Core.println("Finding all methods for $(sig)")
+    result = Core.Compiler.findall(sig, method_table; limit=-1)
+    @assert !(result === nothing || result === missing)
+    @static if isdefined(Core.Compiler, :MethodMatchResult)
+        (; matches) = result
+    else
+        matches = result
+    end
+    fullmatch = Core.Compiler._any(match::Core.MethodMatch->match.fully_covers, matches)
+    if caller !== nothing
+        fullmatch || add_mt_backedge!(caller, mt, sig)
+    end
+    if Core.Compiler.isempty(matches)
+        return false
+    else
+        if caller !== nothing
+            for i = 1:Core.Compiler.length(matches)
+                match = Core.Compiler.getindex(matches, i)::Core.MethodMatch
+                edge = Core.Compiler.specialize_method(match)::Core.MethodInstance
+                Core.println("Adding backedge from $(caller) to $(edge)")
+                CC.add_backedge!(caller, edge)
+                # Core.println("\t$(edge.backedges)")
+            end
+        end
+        return true
+    end
+end
+
+function add_backedge!(caller::Core.MethodInstance, callee::Core.MethodInstance, @nospecialize(sig))
+    ccall(:jl_method_instance_add_backedge, Cvoid, (Any, Any, Any), callee, sig, caller)
+    return nothing
+end
+
+function add_mt_backedge!(caller::Core.MethodInstance, mt::Core.MethodTable, @nospecialize(sig))
+    ccall(:jl_method_table_add_backedge, Cvoid, (Any, Any, Any), mt, sig, caller)
+    return nothing
+end
+
 
 ## utils
 
