@@ -70,3 +70,29 @@ macro mlirfunction(f)
     Base.is_function_def(f) || error("@mlirfunction requires a function definition")
     mlirfunction_(f)
 end
+
+macro intrinsic(f)
+    f = macroexpand(__module__, f)
+    Base.is_function_def(f) || error("@mlirfunction requires a function definition")
+    intrinsic_(f)
+end
+
+function intrinsic_(expr)
+    dict = splitdef(expr)
+    length(dict[:kwargs]) == 0 || error("Intrinsic functions can't have keyword arguments\nDefine a regular function with kwargs that calls the intrinsic instead.")
+    argtypes = map(dict[:args]) do arg
+        if arg isa Symbol
+            return :Any
+        elseif arg.head == :(::)
+            return arg.args[2]
+        else
+            error("Don't know how to handle argument type $arg")
+        end
+    end
+
+    return quote
+        Brutus.reset_cache()
+        $(esc(expr))
+        Brutus.is_intrinsic(::Type{<:Tuple{typeof($(esc(dict[:name]))), $(esc.(argtypes)...)}}) where {$(esc.(dict[:whereparams])...)} = true
+    end
+end

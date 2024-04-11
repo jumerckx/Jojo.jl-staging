@@ -40,6 +40,8 @@ end
 
 cache_token = gensym(:MLIRInterpreterCache)
 function reset_cache()
+    @debug "Resetting cache"
+    
     global cache_token
     cache_token = gensym(:MLIRInterpreterCache)
 end
