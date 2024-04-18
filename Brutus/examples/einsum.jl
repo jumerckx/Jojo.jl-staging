@@ -10,10 +10,6 @@ registerAllDialects!()
 mlirRegisterAllPasses()
 mlirRegisterAllLLVMTranslations(ctx.context)
 
-@intrinsic function linalgyield(x::T)::Nothing where {T}
-    linalg.yield([x])
-    return nothing
-end
 
 function maps(output_indices, inputs_indices)
     parallel, reduction = parse.(Ref(Attribute), (
@@ -57,6 +53,9 @@ end
 
 struct Einsum{T}
     desc::Pair{T}
+    @intrinsic function Einsum(desc::Pair{T}) where {T}
+        return new{T}(desc)
+    end
 end
 function maps(e::Einsum)
     return maps(e.desc.second, e.desc.first)
@@ -93,13 +92,12 @@ generate(
 
 @intrinsic function _einsum(E::Einsum, Y::T, XS) where {T<:tensor}
     indexing_maps, iterator_types = maps(E)
-    cg = CodegenContext{LinalgBody}(
+    region = generate(CodegenContext{LinalgBody}(
         (xs, y)-> execute_region(i64) do 
             y+prod(xs)
         end,
         Tuple{Tuple{eltype.(XS)...}, eltype(Y)}
-    )
-    region = generate(cg)
+    ))
     op = linalg.generic(
         XS,
         [Y];
@@ -118,4 +116,4 @@ end
 generate(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
     f(Y, A, B)
-end
+end |> simplify
