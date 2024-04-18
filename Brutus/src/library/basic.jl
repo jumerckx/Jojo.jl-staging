@@ -2,7 +2,7 @@ import MLIR.IR
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
 import MLIR.Dialects
 using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet, mlirF16TypeGet
-using Brutus: @mlirfunction, Boollike
+using Brutus: @intrinsic, Boollike
 import Brutus: BoolTrait
 
 ### int ###
@@ -22,19 +22,19 @@ const i16 = MLIRInteger{16}
 const i32 = MLIRInteger{32}
 const i64 = MLIRInteger{64}
 
-@mlirfunction (Base.:+(a::T, b::T)::T) where {T<:MLIRInteger} = T(Dialects.arith.addi(a, b)|>result)
-@mlirfunction (Base.:-(a::T, b::T)::T) where {T<:MLIRInteger} = T(Dialects.arith.subi(a, b)|>result)
-@mlirfunction (Base.:*(a::T, b::T)::T) where {T<:MLIRInteger} = T(Dialects.arith.muli(a, b)|>result)
-@mlirfunction (Base.:/(a::T, b::T)::T) where {T<:MLIRInteger} = T(Dialects.arith.divi(a, b)|>result)
+@intrinsic Base.:+(a::T, b::T) where {T<:MLIRInteger} = T(Dialects.arith.addi(a, b)|>result)
+@intrinsic Base.:-(a::T, b::T) where {T<:MLIRInteger} = T(Dialects.arith.subi(a, b)|>result)
+@intrinsic Base.:*(a::T, b::T) where {T<:MLIRInteger} = T(Dialects.arith.muli(a, b)|>result)
+@intrinsic Base.:/(a::T, b::T) where {T<:MLIRInteger} = T(Dialects.arith.divi(a, b)|>result)
 
-@mlirfunction (Base.:>(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sgt))
-@mlirfunction (Base.:>=(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sge))
-@mlirfunction (Base.:<(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.slt))
-@mlirfunction (Base.:<=(a::T, b::T)::i1) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sle))
+@intrinsic Base.:>(a::T, b::T) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sgt))
+@intrinsic Base.:>=(a::T, b::T) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sge))
+@intrinsic Base.:<(a::T, b::T) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.slt))
+@intrinsic Base.:<=(a::T, b::T) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sle))
 
 # promote constant julia integers to int
 Base.promote_rule(::Type{T}, ::Type{I}) where {T<:MLIRInteger, I<:Integer} = T
-@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T<:MLIRInteger}
+@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T<:MLIRInteger}
     op = Dialects.arith.constant(value=Attribute(x), result=IR.Type(T))
     T(result(op))
 end
@@ -61,16 +61,16 @@ IR.Type(::Type{MLIRF64}) = IR.Type(mlirF64TypeGet(context()))
 IR.Type(::Type{MLIRF32}) = IR.Type(mlirF32TypeGet(context()))
 IR.Type(::Type{MLIRF16}) = IR.Type(mlirF16TypeGet(context()))
 
-@mlirfunction (Base.:+(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.addf(a, b)|>result)
-@mlirfunction (Base.:-(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.subf(a, b)|>result)
-@mlirfunction (Base.:*(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.mulf(a, b)|>result)
-@mlirfunction (Base.:/(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.divf(a, b)|>result)
+@intrinsic (Base.:+(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.addf(a, b)|>result)
+@intrinsic (Base.:-(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.subf(a, b)|>result)
+@intrinsic (Base.:*(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.mulf(a, b)|>result)
+@intrinsic (Base.:/(a::T, b::T)::T) where {T<:MLIRFloat} = T(Dialects.arith.divf(a, b)|>result)
 
 # TODO: 
-# @mlirfunction Base.:>(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
-# @mlirfunction Base.:>=(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
-# @mlirfunction Base.:<(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
-# @mlirfunction Base.:<=(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
+# @intrinsic Base.:>(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
+# @intrinsic Base.:>=(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
+# @intrinsic Base.:<(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
+# @intrinsic Base.:<=(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
 
 
 ### index  ###
@@ -81,22 +81,22 @@ const index = MLIRIndex
 IR.Type(::Type{MLIRIndex}) = IndexType()
 MLIRValueTrait(::Type{<:MLIRIndex}) = Convertible()
 
-@mlirfunction Base.:+(a::index, b::index)::index = index(Dialects.index.add(a, b)|>result)
-@mlirfunction Base.:-(a::index, b::index)::index = index(Dialects.index.sub(a, b)|>result)
-@mlirfunction Base.:*(a::index, b::index)::index = index(Dialects.index.mul(a, b)|>result)
-@mlirfunction Base.:/(a::index, b::index)::index = index(Dialects.index.divs(a, b)|>result)
+@intrinsic Base.:+(a::index, b::index)::index = index(Dialects.index.add(a, b)|>result)
+@intrinsic Base.:-(a::index, b::index)::index = index(Dialects.index.sub(a, b)|>result)
+@intrinsic Base.:*(a::index, b::index)::index = index(Dialects.index.mul(a, b)|>result)
+@intrinsic Base.:/(a::index, b::index)::index = index(Dialects.index.divs(a, b)|>result)
 
 # TODO:
-# @mlirfunction Base.:>(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
-# @mlirfunction Base.:>=(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
-# @mlirfunction Base.:<(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
-# @mlirfunction Base.:<=(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
+# @intrinsic Base.:>(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
+# @intrinsic Base.:>=(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
+# @intrinsic Base.:<(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
+# @intrinsic Base.:<=(a::index, b::index)::i1 = i1(Dialects.index.cmp(a, b, predicate=...)|>result)
 
 # promote constant julia integers to index
+@intrinsic index(x::Integer) = index(Dialects.index.constant(value=Attribute(x, IR.Type(index)), result=IR.Type(index))|>result)
 Base.promote_rule(::Type{index}, ::Type{I}) where {I<:Integer} = index
-@mlirfunction function Base.convert(::Type{index}, x::Integer)::index
-    op = Dialects.index.constant(value=Attribute(x, IR.Type(index)), result=IR.Type(index))
-    index(result(op))
+function Base.convert(::Type{index}, x::Integer)::index
+    index(x)
 end
 
 ### abstract type for array-like types ###
@@ -146,23 +146,22 @@ const memref{T, N} = MLIRMemref{T, N, nothing, nothing, nothing, 0}
 
 Base.size(A::MLIRMemref{T, N, Shape}) where {T, N, Shape} = Tuple(Shape.parameters)
 
-@mlirfunction function Base.getindex(A::MLIRMemref{T, 1}, i::index)::T where T
+@intrinsic function Base.getindex(A::MLIRMemref{T, 1}, i::index)::T where T
     oneoff = Dialects.index.constant(; value=Attribute(1, IndexType())) |> result
     new_index = Dialects.index.sub(i, oneoff) |> result
     T(Dialects.memref.load(A, [new_index]) |> result)
 end
-@mlirfunction function Base.getindex(A::MLIRMemref{T}, i::Int)::T where T
-    i = index(Dialects.index.constant(; value=Attribute(i, IndexType())) |> result)
-    A[i]
+function Base.getindex(A::MLIRMemref{T}, i::Int)::T where T
+    A[index(i)]
 end
 
-@mlirfunction function Base.setindex!(A::MLIRMemref{T, 1}, v::T, i::index)::T where T
+@intrinsic function Base.setindex!(A::MLIRMemref{T, 1}, v::T, i::index)::T where T
     oneoff = Dialects.index.constant(; value=Attribute(1, IndexType())) |> result
     new_index = Dialects.index.sub(i, oneoff) |> IR.result
     Dialects.memref.store(v, A, [new_index])
     return v
 end
-@mlirfunction function Base.setindex!(A::MLIRMemref{T, 1}, v, i::Int)::T where {T}
+@intrinsic function Base.setindex!(A::MLIRMemref{T, 1}, v, i::Int)::T where {T}
     # this method can only be called with constant i since we assume arguments to `code_mlir` to be MLIR types, not Julia types.
     i = index(Dialects.index.constant(; value=Attribute(i, IndexType())) |> result)
     A[i] = v

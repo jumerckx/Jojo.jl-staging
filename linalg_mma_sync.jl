@@ -3,7 +3,7 @@ includet("utils.jl")
 
 using Brutus.Library: index, f32, f16, i64, memref, MLIRMemref
 using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Brutus: MemRef, @mlirfunction, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -24,18 +24,25 @@ abstract type LinalgBody end
 generate_return(cg::CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)
 generate_function(cg::CodegenContext{LinalgBody}) = region(cg)
 
-@mlirfunction function mul!(c::MLIRMemref{T}, a::MLIRMemref{T}, b::MLIRMemref{T})::MLIRMemref{T} where {T}
-    cg = CodegenContext{LinalgBody}((a, b, c) -> c + a*b, Tuple{T, T, T})
-    reg = generate(cg)
+@intrinsic function mul!(c::MLIRMemref{T}, a::MLIRMemref{T}, b::MLIRMemref{T})::MLIRMemref{T} where {T}
+    reg = generate(CodegenContext{LinalgBody}((a, b, c) -> c + a*b, Tuple{T, T, T}))
     result_tensors = IR.Type[]
     linalg.matmul([a, b], [c]; result_tensors, region=reg)
     return c
 end
 
+import Core.Compiler
+const CC = Core.Compiler
+
 generate(Tuple{memref{f32, 2}, memref{f32, 2}, memref{f32, 2}}) do a, b, c
     mul!(c, a, b)
     return nothing
 end
+
+CodegenContext(Tuple{memref{f32, 2}, memref{f32, 2}, memref{f32, 2}}) do a, b, c
+    return mul!(c, a, b)[1]
+    return nothing
+end.ir
 
 const MMAOperand{T, S} = MLIRMemref{T, 2, S, 1, Tuple{16, 1}, 0}
 
@@ -49,7 +56,7 @@ CodegenContext{GPUFunc}(Tuple{memref{f32, 2}, memref{f32, 2}, memref{f32, 2}}) d
     return nothing
 end |> generate
 
-@mlirfunction assume_alignment(m::MLIRMemref)::Nothing = begin
+@intrinsic assume_alignment(m::MLIRMemref) = begin
     MLIR.Dialects.memref.assume_alignment(m, alignment=Int32(256))
     nothing
 end
@@ -106,11 +113,11 @@ mlir_opt(mod, "transform-interpreter")
 mlir_opt(mod, "convert-nvgpu-to-nvvm,convert-vector-to-scf,convert-scf-to-cf,convert-nvvm-to-llvm,convert-func-to-llvm,expand-strided-metadata")
 mlir_opt(mod, "convert-vector-to-scf")
 mlir_opt(mod, "lower-affine,convert-arith-to-llvm,convert-index-to-llvm,canonicalize,cse")
-mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target{chip=sm_90 O=3}")
+mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target{chip=sm_75 O=3}")
 mlir_opt(mod, "reconcile-unrealized-casts")
 mlir_opt(mod, "gpu-to-llvm")
 
 data = API.mlirSerializeGPUModuleOp(gpu_mod_op_copy)
 
 print(String(data))
-    
+

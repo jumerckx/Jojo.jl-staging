@@ -1,4 +1,4 @@
-using Brutus: @mlirfunction, generate, simplify
+using Brutus: @intrinsic, generate, simplify
 using Brutus.Library: tensor, i64
 using MLIR.Dialects: linalg, scf
 using MLIR.IR: Context, Attribute, AffineMap, DenseArrayAttribute, Type, context
@@ -10,7 +10,7 @@ registerAllDialects!()
 mlirRegisterAllPasses()
 mlirRegisterAllLLVMTranslations(ctx.context)
 
-@mlirfunction function linalgyield(x::T)::Nothing where {T}
+@intrinsic function linalgyield(x::T)::Nothing where {T}
     linalg.yield([x])
     return nothing
 end
@@ -68,14 +68,15 @@ abstract type ExecuteRegion end
 generate_return(cg::CodegenContext{ExecuteRegion}, values; location) = scf.yield(values; location)
 generate_function(cg::CodegenContext{ExecuteRegion}) = region(cg)
 
-@mlirfunction function execute_region(f, T=only(Base.return_types(f, Tuple{}, interp=Brutus.MLIRInterpreter())))::T
-    cg = @nonoverlay CodegenContext{ExecuteRegion}(f, Tuple{})
-    region = @nonoverlay generate(cg)
+@intrinsic function execute_region(f, T)
+    cg = CodegenContext{ExecuteRegion}(f, Tuple{})
+    region = generate(cg)
     T(scf.execute_region(;
         region,
         result_0=[IR.Type(T)]
     ) |> IR.result)
 end
+execute_region(f) = execute_region(f, only(Base.return_types(f, Tuple{}, interp=Brutus.MLIRInterpreter())))
 
 abstract type LinalgBody end
 generate_return(cg::CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)
@@ -90,15 +91,15 @@ generate(
     )
 )
 
-@mlirfunction function (E::Einsum)(Y::T, XS::Vararg{tensor})::T where {T<:tensor}
+@intrinsic function _einsum(E::Einsum, Y::T, XS) where {T<:tensor}
     indexing_maps, iterator_types = maps(E)
-    cg = @nonoverlay CodegenContext{LinalgBody}(
+    cg = CodegenContext{LinalgBody}(
         (xs, y)-> execute_region(i64) do 
             y+prod(xs)
         end,
         Tuple{Tuple{eltype.(XS)...}, eltype(Y)}
     )
-    region = @nonoverlay generate(cg)
+    region = generate(cg)
     op = linalg.generic(
         XS,
         [Y];
@@ -107,11 +108,14 @@ generate(
         iterator_types,
         region
     )
-    @info op
     return T(IR.result(op))
+end
+
+function (E::Einsum)(Y, XS...)
+    _einsum(E, Y, XS)
 end
 
 generate(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
     f(Y, A, B)
-end |> simplify
+end

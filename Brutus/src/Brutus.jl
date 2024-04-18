@@ -148,7 +148,7 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                     return arg
                 end
 
-                getintrinsic(gr::GlobalRef) = Core.Compiler.abstract_eval_globalref(gr)
+                getintrinsic(gr::GlobalRef) = Core.Compiler.abstract_eval_globalref_type(gr)
                 getintrinsic(inst::Expr) = getintrinsic(first(inst.args))
                 getintrinsic(mod::Module, name::Symbol) = getintrinsic(GlobalRef(mod, name))
 
@@ -185,8 +185,8 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 argvalues = get_value.(Ref(cg), args)
 
                 # special case mlir_bool_conversion to just forward the argument
-                if called_func == mlir_bool_conversion
-                    @assert length(argvalues) == 2
+                if called_func == bool_conversion_intrinsic
+                    @assert length(argvalues) == 1 "Expected 1 argument for bool_conversion_intrinsic, got: $(argvalues)"
                     out = argvalues[end]
                 else
                     out = mlircompilationpass() do
@@ -280,6 +280,8 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
 
     end # codegencontext
 end
+is_intrinsic(::Type{<:Tuple{typeof(generate), AbstractCodegenContext, Any, Any, Any}}) = true
+
 @overlay MLIRCompilation function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=false, do_simplify=true)
     return @nonoverlay generate(cg; emit_region, skip_return, do_simplify)
 end

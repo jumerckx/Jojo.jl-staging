@@ -1,7 +1,7 @@
 using MLIR
 includet("utils.jl")
 using Brutus
-import Brutus: MemRef, @mlirfunction, @code_mlir
+import Brutus: MemRef, @intrinsic, @code_mlir
 using Brutus.Types
 using Brutus.Types: MLIRFloat
 using BenchmarkTools, MLIR, MacroTools
@@ -17,35 +17,35 @@ registerAllDialects!();
 API.mlirRegisterAllPasses()
 API.mlirRegisterAllLLVMTranslations(ctx.context)
 
-@mlirfunction (Base.:+(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.addf(a, b) |> IR.result)
-@mlirfunction (Base.:-(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.subf(a, b) |> IR.result)
-@mlirfunction (Base.:*(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.mulf(a, b) |> IR.result)
-@mlirfunction (Base.:/(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.divf(a, b) |> IR.result)
+@intrinsic (Base.:+(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.addf(a, b) |> IR.result)
+@intrinsic (Base.:-(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.subf(a, b) |> IR.result)
+@intrinsic (Base.:*(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.mulf(a, b) |> IR.result)
+@intrinsic (Base.:/(a::T, b::T)::T) where {T <: MLIRFloat} = T(arith.divf(a, b) |> IR.result)
 
-@mlirfunction Base.:+(a::i64, b::i64)::i64 = i64(arith.addi(a, b))
-@mlirfunction Base.:-(a::i64, b::i64)::i64 = i64(arith.subi(a, b))
-@mlirfunction Base.:*(a::i64, b::i64)::i64 = i64(arith.muli(a, b))
-@mlirfunction Base.:/(a::i64, b::i64)::i64 = i64(arith.divsi(a, b))
-@mlirfunction Base.:>(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
-@mlirfunction Base.:>=(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
-@mlirfunction function Base.:+(a::T, b::T)::T where {I<:Types.MLIRInteger, T<:Union{I, tensor{I}}}
+@intrinsic Base.:+(a::i64, b::i64)::i64 = i64(arith.addi(a, b))
+@intrinsic Base.:-(a::i64, b::i64)::i64 = i64(arith.subi(a, b))
+@intrinsic Base.:*(a::i64, b::i64)::i64 = i64(arith.muli(a, b))
+@intrinsic Base.:/(a::i64, b::i64)::i64 = i64(arith.divsi(a, b))
+@intrinsic Base.:>(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
+@intrinsic Base.:>=(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
+@intrinsic function Base.:+(a::T, b::T)::T where {I<:Types.MLIRInteger, T<:Union{I, tensor{I}}}
     T(IR.result(arith.addi(a, b)))
 end
-@mlirfunction function Base.:*(a::T, b::T)::T where {I<:Types.MLIRInteger, T<:Union{I, tensor{I}}}
+@intrinsic function Base.:*(a::T, b::T)::T where {I<:Types.MLIRInteger, T<:Union{I, tensor{I}}}
     T(IR.result(arith.muli(a, b)))
 end
-@mlirfunction function Base.getindex(A::memref{T}, i::Int)::T where T
+@intrinsic function Base.getindex(A::memref{T}, i::Int)::T where T
     # this method can only be called with constant i since we assume arguments to `code_mlir` to be MLIR types, not Julia types.
     i = Types.index(index.constant(; value=Attribute(i, IR.IndexType())) |> IR.result)
     A[i]
 end
-@mlirfunction function Base.getindex(A::memref{T, 1}, i::Types.index)::T where T
+@intrinsic function Base.getindex(A::memref{T, 1}, i::Types.index)::T where T
     oneoff = index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
     new_index = arith.subi(i, oneoff) |> IR.result
     T(Dialects.memref.load(A, [new_index]) |> IR.result)
 end
 
-@mlirfunction function linalgyield(x::T)::Nothing where {T}
+@intrinsic function linalgyield(x::T)::Nothing where {T}
     linalg.yield([x])
     return nothing
 end
@@ -97,7 +97,7 @@ function Einsum(desc::Pair{T}) where T
     return Einsum{desc.first, desc.second}()
 end
 
-@mlirfunction function (E::Einsum{I, O})(Y::T, XS::Vararg{tensor})::T where {I, O, T<:tensor}
+@intrinsic function (E::Einsum{I, O})(Y::T, XS::Vararg{tensor})::T where {I, O, T<:tensor}
     indexing_maps, iterator_types = maps(E)
     region = @nonoverlay Brutus.code_mlir(
         (xs, y)->linalgyield(y+prod(xs)),
@@ -133,7 +133,7 @@ Base.code_ircode(
 
 Base.promote_rule(::Type{T}, ::Type{I}) where {T<:Brutus.Types.MLIRInteger, I<:Integer} = T
 
-@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T <: Brutus.Types.MLIRInteger}
+@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T <: Brutus.Types.MLIRInteger}
     op = arith.constant(value=Attribute(x), result=IR.Type(T))
     T(IR.result(op))
 end
@@ -145,11 +145,11 @@ end
 
 Base.promote_rule(::Type{Brutus.Types.MLIRIndex}, ::Type{I}) where {I<:Integer} = Brutus.Types.MLIRIndex
 
-@mlirfunction function Base.convert(::Type{T}, x::Integer)::T where {T<:Brutus.Types.MLIRIndex}
+@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T<:Brutus.Types.MLIRIndex}
     op = index.constant(value=Attribute(x, IR.IndexType()), result=IR.Type(T))
     T(IR.result(op))
 end
-@mlirfunction function Base.:+(a::T, b::T)::T where {T<:Brutus.Types.MLIRIndex}
+@intrinsic function Base.:+(a::T, b::T)::T where {T<:Brutus.Types.MLIRIndex}
     T(IR.result(index.add(a, b)))
 end
 
@@ -165,7 +165,7 @@ end
 
 Base.promote_rule(::Type{Brutus.Types.MLIRInteger{A}}, y::Type{Brutus.Types.MLIRInteger{B}}) where {A, B} = Brutus.Types.MLIRInteger{max(A, B)}
 
-@mlirfunction function Base.convert(::Type{T}, x::Brutus.Types.MLIRInteger{X})::T where {N, T<:Brutus.Types.MLIRInteger{N}, X}
+@intrinsic function Base.convert(::Type{T}, x::Brutus.Types.MLIRInteger{X})::T where {N, T<:Brutus.Types.MLIRInteger{N}, X}
     if (N > X)
         op = arith.extsi(x, out=IR.Type(T))
     else

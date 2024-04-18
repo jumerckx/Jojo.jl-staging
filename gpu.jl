@@ -3,7 +3,7 @@ includet("utils.jl")
 
 using Brutus.Library: index, f32, i64, memref, MLIRMemref
 using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Brutus: MemRef, @mlirfunction, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -80,19 +80,19 @@ nothing
 #     write(file, Base.unsafe_wrap(Vector{Int8}, pointer(data.data), Int(data.length), own=false))
 # end
 
-# @mlirfunction function scf_yield(results)::Nothing
+# @intrinsic function scf_yield(results)::Nothing
 #     Dialects.scf.yield(results)
 #     nothing
 # end
 
-# @mlirfunction function scf_for(body, initial_value::T, lb::index, ub::index, step::index)::T where T
+# @intrinsic function scf_for(body, initial_value::T, lb::index, ub::index, step::index)::T where T
 #     @info "body IR" @nonoverlay Base.code_ircode(body, Tuple{index, T}, interp=Brutus.MLIRInterpreter())
-#     region = @nonoverlay Brutus.generate(body, Tuple{index, T}, emit_region=true, skip_return=true)
+#     region = @nonoverlay generate(body, Tuple{index, T}, emit_region=true, skip_return=true)
 #     op = Dialects.scf.for_(lb, ub, step, [initial_value]; results=IR.Type[IR.Type(T)], region)
 #     return T(IR.result(op))
 # end
 
-# Brutus.generate(Tuple{index, index, index, i64, i64}, do_simplify=false) do lb, ub, step, initial, cst
+# generate(Tuple{index, index, index, i64, i64}, do_simplify=false) do lb, ub, step, initial, cst
 
 #     a = scf_for(initial, lb, ub, step) do i, carry
 #         b = scf_for(initial, lb, ub, step) do j, carry2

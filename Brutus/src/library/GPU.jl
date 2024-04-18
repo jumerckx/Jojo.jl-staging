@@ -4,15 +4,14 @@ import MLIR.IR
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
 import MLIR.Dialects
 using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet
-using Brutus: @mlirfunction, Boollike, CodegenContext, unpack
+using Brutus: @intrinsic, Boollike, CodegenContext, unpack
 import Brutus: BoolTrait, generate_return, generate_function, region, entryblock, returntype
 using Brutus.Library: index, MLIRMemref, i8, i32, f16, f32
 
-@enum OperandType begin
-    AOp
-    BOp
-    COp
-end
+abstract type OperandType end
+struct AOp <: OperandType end
+struct BOp <: OperandType end
+struct COp <: OperandType end
 
 struct MMA_Matrix{T, OT}
     value::Value
@@ -57,7 +56,7 @@ function gpu_module(funcs::Vector{IR.Operation}, name="gpu_module")
     op
 end
 
-@mlirfunction function threadIdx(dim::Symbol)::index
+@intrinsic function threadIdx(dim::Symbol)::index
     oneoff = index(Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
     
     dimension = parse(IR.Attribute, "#gpu<dim $dim>")
@@ -69,7 +68,7 @@ function threadIdx()::@NamedTuple{x::index, y::index, z::index}
     (; x=threadIdx(:x), y=threadIdx(:y), z=threadIdx(:z))
 end
 
-@mlirfunction function blockIdx()::@NamedTuple{x::index, y::index, z::index}
+@intrinsic function blockIdx()::@NamedTuple{x::index, y::index, z::index}
     oneoff = index(Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result)
     indices = map(('x', 'y', 'z')) do d
         dimension = parse(IR.Attribute, "#gpu<dim $d>")
@@ -79,7 +78,7 @@ end
     return (; x=indices[1], y=indices[2], z=indices[3])
 end
 
-@mlirfunction function blockDim()::@NamedTuple{x::index, y::index, z::index}
+@intrinsic function blockDim()::@NamedTuple{x::index, y::index, z::index}
     oneoff = Dialects.index.constant(; value=Attribute(1, IR.IndexType())) |> IR.result
     indices = map(('x', 'y', 'z')) do d
         dimension = parse(IR.Attribute, "#gpu<dim $d>")
@@ -90,7 +89,7 @@ end
 end
 
 
-@mlirfunction function mma_load(src::T, I::Tuple{index, index}=(index(1), index(1)))::MLIRMemref{f16, 2, Tuple{16, 16}, nothing, Tuple{16, 1}, 0} where {T<:MLIRMemref{f16, 2}}
+@intrinsic function mma_load(src::T, I::Tuple{index, index})::MLIRMemref{f16, 2, Tuple{16, 16}, nothing, Tuple{16, 1}, 0} where {T<:MLIRMemref{f16, 2}}
     T_out = MLIRMemref{f16, 2, Tuple{16, 16}, nothing, Tuple{16, 1}, 0}
     r = T_out(
         IR.result(Dialects.gpu.subgroup_mma_load_matrix(
@@ -103,5 +102,6 @@ end
 end
 
 mma_load(src, I) = mma_load(src, (index(I[1]), index(I[2])))
+mma_load(src) = mma_load(src, (index(1), index(1)))
 
 end # GPU
