@@ -33,6 +33,11 @@ const i64 = MLIRInteger{64}
 @intrinsic Base.:<=(a::T, b::T) where {T<:MLIRInteger} = i1(Dialects.arith.cmpi(a, b, predicate=Dialects.arith.Predicates.sle))
 
 # promote constant julia integers to int
+@intrinsic i64(x::Integer) = i64(Dialects.arith.constant(value=Attribute(Int64(x)), result=IR.Type(i64))|>result)
+@intrinsic i32(x::Integer) = i32(Dialects.arith.constant(value=Attribute(Int32(x)), result=IR.Type(i32))|>result)
+@intrinsic i16(x::Integer) = i16(Dialects.arith.constant(value=Attribute(Int16(x)), result=IR.Type(i16))|>result)
+@intrinsic i8(x::Integer) = i8(Dialects.arith.constant(value=Attribute(Int8(x)), result=IR.Type(i8))|>result)
+
 Base.promote_rule(::Type{T}, ::Type{I}) where {T<:MLIRInteger, I<:Integer} = T
 @intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T<:MLIRInteger}
     op = Dialects.arith.constant(value=Attribute(x), result=IR.Type(T))
@@ -72,6 +77,10 @@ IR.Type(::Type{MLIRF16}) = IR.Type(mlirF16TypeGet(context()))
 # @intrinsic Base.:<(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
 # @intrinsic Base.:<=(a::T, b::T)::i1 where {T<:MLIRFloat} = i1(Dialects.arith.cmpf(a, b, predicate=...))
 
+f32(x::f32) = x
+@intrinsic f32(x::Real) = f32(Dialects.arith.constant(value=IR.Attribute(Float32(x)), result=IR.Type(f32)) |> result)
+Base.convert(::Type{f32}, x::Real) = f32(x)
+Base.promote_rule(::Type{f32}, ::Type{<:Real}) = f32
 
 ### index  ###
 struct MLIRIndex <: Integer
@@ -98,6 +107,9 @@ Base.promote_rule(::Type{index}, ::Type{I}) where {I<:Integer} = index
 function Base.convert(::Type{index}, x::Integer)::index
     index(x)
 end
+
+@intrinsic i64(x::index) = i64(Dialects.index.casts(x, output=IR.Type(i64))|>result)
+@intrinsic index(x::i64) = index(Dialects.index.casts(x, output=IR.Type(index))|>result)
 
 ### abstract type for array-like types ###
 abstract type MLIRArrayLike{T, N} <: AbstractArray{T, N} end

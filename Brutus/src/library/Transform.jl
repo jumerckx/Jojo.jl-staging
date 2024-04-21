@@ -161,8 +161,9 @@ end
     AnyOp(IR.result(transform.structured_vectorize_children_and_apply_patterns(target; transformed=IR.Type(AnyOp))))
 end
 
-@intrinsic function one_shot_bufferize(target)
-    AnyOp(IR.result(transform.bufferization_one_shot_bufferize(target; transformed=IR.Type(AnyOp))))
+@intrinsic function one_shot_bufferize(target, bufferize_function_boundaries::Bool, function_boundary_type_conversion::Int32)
+    AnyOp(IR.result(transform.bufferization_one_shot_bufferize(target; transformed=IR.Type(AnyOp), function_boundary_type_conversion, bufferize_function_boundaries)))
 end
+one_shot_bufferize(target) = one_shot_bufferize(target, false, 1)
 
 end # Transform

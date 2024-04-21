@@ -198,8 +198,6 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 end
                 dest = blocks(cg)[inst.label]
                 loc = Location(string(line.file), line.line, 0)
-                @info typeof(cg)
-                @info which(generate_goto, (typeof(cg), typeof(args), typeof(dest)))
                 push!(currentblock(cg), generate_goto(cg, args, dest; location=loc))
             elseif inst isa GotoIfNot
                 false_args = [get_value.(Ref(cg), collect_value_arguments(ir(cg), currentblockindex(cg), inst.dest))...]
@@ -229,10 +227,7 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 end
                 ret = generate_return(cg, returnvalue; location=loc)
                 if !isnothing(ret)
-                    @info ret returnvalue
                     push!(currentblock(cg), ret)
-                else
-                    @info "heh?!"
                 end
             elseif Meta.isexpr(inst, :new)
                 args = get_value.(Ref(cg), inst.args)

@@ -41,6 +41,7 @@ mod = IR.Module()
 push!(IR.body(mod), gpu_mod_op)
 IR.attr!(IR.Operation(mod), "gpu.container_module", IR.UnitAttribute())
 
+# mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-rocdl), rocdl-attach-target,gpu-to-llvm")
 mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target,gpu-to-llvm")
 mlir_opt(mod, "reconcile-unrealized-casts")
 

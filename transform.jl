@@ -7,7 +7,7 @@ import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
-using MLIR.Dialects: arith, gpu
+using MLIR.Dialects: arith, gpu, transform
 using MLIR.IR: Context, @affinemap, Attribute, AffineMap, DenseArrayAttribute, Type, context
 using MLIR.API: mlirRegisterAllPasses, mlirRegisterAllLLVMTranslations
 
@@ -20,22 +20,7 @@ mlirRegisterAllLLVMTranslations(ctx.context)
     f(args...; kwargs...)
 end
 function as_intrinsic(f, args...; kwargs...)
-    
     _as_intrinsic(f, args, kwargs)
-end
-
-generate(Tuple{Transform.AnyOp}) do op
-    matched = Transform.structured_match(op, name="linalg.generic")
-    tiled = Transform.structured_tile_using_for(matched, (0, 0, 1))
-    tiled = Transform.structured_tile_using_for(tiled, (0, 1, 0))
-
-    Transform.apply_patterns(op) do # todo
-        as_intrinsic(Dialects.transform.apply_patterns_canonicalization)
-        as_intrinsic(Dialects.transform.apply_patterns_linalg_tiling_canonicalization)
-        return
-    end
-    
-    return nothing
 end
 
 function lower(op::Transform.AnyOp)
@@ -69,7 +54,7 @@ function lower(op::Transform.AnyOp)
     as_intrinsic(Dialects.transform.apply_cse, fv)
     as_intrinsic(Dialects.transform.structured_hoist_redundant_vector_transfers, fv; transformed=IR.Type(Transform.AnyOp))
 
-    op = Transform.one_shot_bufferize(op) # todo: bufferize_boundaries, function_boundary_type_conversion
+    op = Transform.one_shot_bufferize(op, true, Int32(1)) # todo: bufferize_boundaries, function_boundary_type_conversion
 
     f = Transform.structured_match(op, name="func.func")
     Transform.apply_registered_pass(f, "buffer-deallocation-pipeline")
@@ -90,6 +75,14 @@ function lower(op::Transform.AnyOp)
     end
 
     Transform.apply_patterns(fb) do 
+        as_intrinsic(Dialects.transform.apply_patterns_vector_transfer_to_scf)
+        as_intrinsic(Dialects.transform.apply_patterns_memref_alloc_to_alloca)
+        return
+    end
+    as_intrinsic(Dialects.transform.bufferization_buffer_loop_hoisting, fb)
+
+
+    Transform.apply_patterns(fb) do 
         as_intrinsic(Dialects.transform.apply_patterns_memref_fold_memref_alias_ops)
         as_intrinsic(Dialects.transform.apply_patterns_canonicalization)
         return        
@@ -101,7 +94,24 @@ function lower(op::Transform.AnyOp)
     return
 end
 
-generate(Tuple{Transform.AnyOp}) do op
+abstract type NamedSequence end
+import Brutus: generate_function, generate_return
+generate_return(cg::CodegenContext{NamedSequence}, values; location) = Dialects.transform.yield(values; location)
+function generate_function(cg::CodegenContext{NamedSequence})
+    body = region(cg)
+    input_types = IR.Type[
+        IR.type(IR.argument(entryblock(cg), i))
+        for i in 1:IR.nargs(entryblock(cg))]
+    result_types = IR.Type[IR.Type.(unpack(returntype(cg)))...]
+    ftype = IR.FunctionType(input_types, result_types)
+    op = Dialects.transform.named_sequence(;
+        sym_name="__transform_main",
+        function_type=ftype,
+        body
+    )
+end
+
+named_sequence_op = CodegenContext{NamedSequence}(Tuple{Transform.AnyOp}) do op
     bias = Transform.structured_match(op; name="linalg.broadcast")
     generics = Transform.structured_match(op; name="linalg.generic")
     conv, relu = Transform.split_handle(generics, 2)
@@ -115,7 +125,9 @@ generate(Tuple{Transform.AnyOp}) do op
     bias, co = Transform.fuse_into(co, bias)
     bias, n_y_xo = Transform.fuse_into(n_y_xo, bias)
 
-    # # something optional...?
+    Transform.apply_patterns(Transform.structured_match(op, name="func.func")) do 
+        nothing
+    end
 
     red_fill, conv, combining, rz_ry_rx = Transform.tile_reduction(Transform.ForTiling, conv, (0, 0, 0, 0, 1, 1, 1))
 
@@ -124,9 +136,14 @@ generate(Tuple{Transform.AnyOp}) do op
     lower(op)
 
     return
-end
+end |> generate
 
-payload = parse(IR.Module, """
+named_sequence_mod = IR.Module()
+
+IR.attr!(IR.Operation(named_sequence_mod), "transform.with_named_sequence", IR.UnitAttribute())
+push!(IR.body(named_sequence_mod), named_sequence_op)
+
+mod = parse(IR.Module, """
     !tinput = tensor<5x82x102x128xf32>
     !tfilter = tensor<128x3x3x128xf32>
     !tbias = tensor<128xf32>
@@ -203,63 +220,30 @@ payload = parse(IR.Module, """
     }
 """)
 
-test = parse(IR.Module, """
-module attributes { transform.with_named_sequence } {
-    transform.named_sequence @lower(
-        %arg0: !transform.any_op {transform.consumed}) {
-    %f00 = transform.structured.match ops{["func.func"]} in %arg0
-        : (!transform.any_op) -> !transform.any_op
+push!(IR.body(mod), IR.rmfromparent!(IR.Operation(named_sequence_mod)))
 
-    transform.apply_patterns to %f00 {
-        transform.apply_patterns.canonicalization
-        transform.apply_patterns.linalg.tiling_canonicalization
-    } : !transform.any_op
-    transform.apply_cse to %f00 : !transform.any_op
-    %all_loops = transform.structured.match interface{LoopLikeInterface}
-        in %arg0
-        : (!transform.any_op) -> !transform.any_op
-    transform.apply_licm to %all_loops : !transform.any_op
+mlir_opt(mod, "transform-interpreter")
+IR.rmfromparent!(IR.Operation(named_sequence_mod))
+IR.Operation(mod) |> simplify
+mlir_opt(mod, "math-uplift-to-fma")
+IR.Operation(mod) |> simplify
+mlir_opt(mod, "convert-bufferization-to-memref")
+IR.Operation(mod) |> simplify
+lowerModuleToLLVM(mod)
+IR.Operation(mod) |> simplify
 
-    transform.yield
-    }
-}
-""")
-testop = collect(IR.OperationIterator(first(IR.BlockIterator(first(IR.RegionIterator(first(IR.OperationIterator(first(IR.BlockIterator(first(IR.RegionIterator(IR.Operation(test)))))))))))))[4]
+input = rand(Float32, (5, 82, 102, 128));
+filter = rand(Float32, (128, 3, 3, 128));
+bias = rand(Float32, 128);
+output = zeros(Float32, (5, 80, 100, 128));
 
-test = parse(IR.Module, """
-module attributes { transform.with_named_sequence } {
-    transform.named_sequence @lower(
-        %arg0: !transform.any_op {transform.consumed}) {
-    transform.apply_patterns to %arg0 {
-        transform.apply_patterns.vector.lower_contraction
-            lowering_strategy = parallelarith
-        transform.apply_patterns.vector.lower_transfer
-            max_transfer_rank = 1
-        transform.apply_patterns.vector.lower_transpose
-            lowering_strategy = eltwise
-        transform.apply_patterns.vector.lower_shape_cast
-        } : !transform.any_op
-
-    transform.yield
-    }
-}
-""")
-
-testops = collect(IR.OperationIterator(first(IR.BlockIterator(first(IR.RegionIterator(first(IR.OperationIterator(first(IR.BlockIterator(first(IR.RegionIterator(first(IR.OperationIterator(first(IR.BlockIterator(first(IR.RegionIterator(IR.Operation(test)))))))))))))))))))
-
-IR.attr(testops[1], "lowering_strategy")
+input, filter, bias, output = map((input, filter, bias, output)) do x
+    out = MemRef(x)
+    out.strides = reverse(Tuple([1, cumprod(reverse(size(x)))[1:end-1]...]))
+    out
+end
 
 
+addr = jit(mod; opt=3)("_mlir_ciface_conv")
+@time @ccall $addr(output2::Ref{MemRef}, input::Ref{MemRef}, filter::Ref{MemRef}, bias::Ref{MemRef}, output::Ref{MemRef})::Nothing
 
-
-
-IR.attr(testop, "interface")
-
-# code_mlir(Tuple{}) do 
-#     named_sequence() do op
-#         matched = structured_match(op, "linalg.generic")
-#         tiled = structured_tile_using_for(matched, (0, 0, 1))
-#         tiled = structured_tile_using_for(tiled, (0, 1, 0))
-#         yield()
-#     end
-# end
