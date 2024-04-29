@@ -11,6 +11,7 @@ include("overlay.jl")
 include("abstract.jl")
 include("codegencontext.jl")
 include("generate.jl")
+include("src2src.jl")
 include("library/Library.jl")
 
 end # module Brutus
