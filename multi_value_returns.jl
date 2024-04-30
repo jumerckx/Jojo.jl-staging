@@ -1,7 +1,7 @@
 using MLIR
 includet("utils.jl")
 using Brutus
-import Brutus: MemRef, @mlirfunction, @code_mlir
+import Brutus: MemRef, @intrinsic, @code_mlir
 using Brutus.Types
 using BenchmarkTools, MLIR, MacroTools
 using StaticArrays
@@ -17,12 +17,12 @@ registerAllDialects!();
 API.mlirRegisterAllPasses()
 API.mlirRegisterAllLLVMTranslations(ctx.context)
 
-@mlirfunction Base.:+(a::i64, b::i64)::i64 = i64(arith.addi(a, b))
-@mlirfunction Base.:-(a::i64, b::i64)::i64 = i64(arith.subi(a, b))
-@mlirfunction Base.:*(a::i64, b::i64)::i64 = i64(arith.muli(a, b))
-@mlirfunction Base.:/(a::i64, b::i64)::i64 = i64(arith.divsi(a, b))
-@mlirfunction Base.:>(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
-@mlirfunction Base.:>=(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
+@intrinsic Base.:+(a::i64, b::i64)::i64 = i64(arith.addi(a, b))
+@intrinsic Base.:-(a::i64, b::i64)::i64 = i64(arith.subi(a, b))
+@intrinsic Base.:*(a::i64, b::i64)::i64 = i64(arith.muli(a, b))
+@intrinsic Base.:/(a::i64, b::i64)::i64 = i64(arith.divsi(a, b))
+@intrinsic Base.:>(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sgt))
+@intrinsic Base.:>=(a::i64, b::i64)::Bool = i1(arith.cmpi(a, b, predicate=arith.Predicates.sge))
 
 ###########################################################################################
 

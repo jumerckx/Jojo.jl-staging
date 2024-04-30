@@ -51,7 +51,7 @@ mma_store(dest, src) = _mma_store(dest, src, (index(1), index(1)))
     )
 end
 
-@noinline function mma(a, b, c)
+function mma(a, b, c)
     a_mma = mma_load(a, AOp)
     b_mma = mma_load(b, BOp)
     c_mma = mma_load(c, COp)
@@ -62,21 +62,47 @@ end
 
 T_in = MLIRMemref{f16, 2, Tuple{16, 16}, nothing, Tuple{16, 1}, 0}
 
-gpu_mod_op = gpu_module([
+@time gpu_mod_op = gpu_module([
     IR.attr!(
         generate(CodegenContext{GPUFunc}(mma, Tuple{T_in, T_in, T_in})),
         "gpu.kernel", IR.UnitAttribute())
-])  |> simplify
+])  |> simplify;
 
 
 mod = IR.Module()
 push!(IR.body(mod), gpu_mod_op)
 IR.attr!(IR.Operation(mod), "gpu.container_module", IR.UnitAttribute())
 
-# mlir_opt(mod, "gpu-lower-to-nvvm-pipeline{cubin-chip=sm_70 cubin-format=isa}")
-
-mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target{chip=sm_90 O=3},gpu-to-llvm")
+mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target{chip=sm_75 O=3},gpu-to-llvm")
 mlir_opt(mod, "reconcile-unrealized-casts")
 data = API.mlirSerializeGPUModuleOp(gpu_mod_op)
 
 print(String(data))
+
+using CUDA
+
+A, B, C = CUDA.rand(Float16, 16, 16), CUDA.rand(Float16, 16, 16), CUDA.zeros(Float16, 16, 16)
+
+import CUDA: CuPtr, CuModule, CuFunction, CuArray, cudacall
+
+md = CuModule(data.data)
+mma_cu = CuFunction(md, "mma")
+
+null = CuPtr{Cfloat}(0);
+cudacall(mma_cu,
+            (CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
+            CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat},
+            CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}, CuPtr{Cfloat}),
+            null, A, null, null, null, null, null,
+            null, B, null, null, null, null, null,
+            null, C, null, null, null, null, null;
+            threads=(32, 1, 1))
+
+#=
+Generated code assumes row-major matrices.
+Simply providing changing the memref stride to (1, 16) to make it column-major isn't supported.
+This can probably be solved by adding an affine map to the memref description that does the
+transformation from row-major to column-major, (i, j)->(j, i).
+But simply using the transpose of the matrices works for verification:
+=#
+@assert C' ≈ A'*B'

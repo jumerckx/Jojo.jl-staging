@@ -198,7 +198,9 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 end
                 dest = blocks(cg)[inst.label]
                 loc = Location(string(line.file), line.line, 0)
-                push!(currentblock(cg), generate_goto(cg, args, dest; location=loc))
+                mlircompilationpass() do
+                    generate_goto(cg, args, dest; location=loc)
+                end
             elseif inst isa GotoIfNot
                 false_args = [get_value.(Ref(cg), collect_value_arguments(ir(cg), currentblockindex(cg), inst.dest))...]
                 cond = get_value(cg, inst.cond)
@@ -209,7 +211,9 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 false_dest = blocks(cg)[inst.dest]
 
                 location = Location(string(line.file), line.line, 0)
-                push!(currentblock(cg), generate_gotoifnot(cg, cond; true_args, false_args, true_dest, false_dest, location))
+                mlircompilationpass() do 
+                    generate_gotoifnot(cg, cond; true_args, false_args, true_dest, false_dest, location)
+                end
             elseif inst isa ReturnNode
                 skip_return && continue
 
@@ -225,9 +229,8 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
                 else
                     returnvalue = [IR.result(push!(currentblock(cg), llvm.mlir_undef(; res=IR.Type(returntype(cg)), location=loc)))]
                 end
-                ret = generate_return(cg, returnvalue; location=loc)
-                if !isnothing(ret)
-                    push!(currentblock(cg), ret)
+                mlircompilationpass() do 
+                    generate_return(cg, returnvalue; location=loc)
                 end
             elseif Meta.isexpr(inst, :new)
                 args = get_value.(Ref(cg), inst.args)
@@ -252,11 +255,14 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
     # add fallthrough to next block if necessary
     for (i, b) in enumerate(blocks(cg))
         if (i != length(blocks(cg)) && IR.mlirIsNull(API.mlirBlockGetTerminator(b)))
+            setcurrentblockindex!(cg, i)
             @debug "Block $i did not have a terminator, adding one."
             args = [get_value.(Ref(cg), collect_value_arguments(ir(cg), i, i+1))...]
             dest = blocks(cg)[i+1]
             loc = IR.Location()
-            push!(b, generate_goto(cg, args, dest; location=loc))
+            mlircompilationpass() do 
+                generate_goto(cg, args, dest; location=loc)
+            end
         end
     end
     

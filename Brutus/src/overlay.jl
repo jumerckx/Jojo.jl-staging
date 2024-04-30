@@ -25,8 +25,6 @@ mlircompilationpass = @overlaypass MLIRCompilation
         result_inference)
     push!(currentblock(codegencontext()), op)
 
-    cg = codegencontext()
-
     return op
 end
 

@@ -98,7 +98,7 @@ function CodegenContext{T}(f, types) where T
         region=Region(),
         blocks,
         entryblock=entryblock,
-        currentblockindex=1,
+        currentblockindex=0,
         ir,
         ret,
         values,

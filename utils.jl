@@ -126,29 +126,3 @@ function jit(op::IR.Operation; opt=0)
     lowerModuleToLLVM(mod)
     jit(mod; opt)
 end
-
-cb = IR.Block() # Fixed block for demonstration purposes.
-IR.lose_ownership!(cb)
-currentblock() = cb
-
-@MethodTable MLIRCompilation
-@overlay MLIRCompilation function IR.create_operation(
-        name, loc;
-        results=nothing,
-        operands=nothing,
-        owned_regions=nothing,
-        successors=nothing,
-        attributes=nothing,
-        result_inference=isnothing(results))
-    @info "Overlayed!!!"
-    op = @nonoverlay IR.create_operation(
-        name, loc;
-        results,
-        operands,
-        owned_regions,
-        successors,
-        attributes,
-        result_inference)
-    push!(currentblock(), op)
-    return op
-end
