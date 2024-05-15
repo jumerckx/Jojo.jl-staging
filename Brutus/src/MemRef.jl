@@ -1,4 +1,4 @@
-mutable struct MemRef{T,N} <: DenseArray{T, N}
+mutable struct MemRef{T,N}
     allocated_pointer::Ptr{T}
     aligned_pointer::Ptr{T}
     offset::Int
@@ -27,4 +27,3 @@ end
 
 Base.show(io::IO, A::Brutus.MemRef{T, N}) where {T, N} = print(io, "Brutus.MemRef{$T,$N} (size $(join(A.sizes, "×")))")
 Base.show(io::IO, ::MIME{Symbol("text/plain")}, X::Brutus.MemRef) = show(io, X)
-Base.size(A::MemRef) = A.sizes
