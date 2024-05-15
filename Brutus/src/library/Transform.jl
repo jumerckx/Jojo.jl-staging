@@ -115,24 +115,6 @@ end
 end
 yield() = yield(())
 
-@intrinsic function named_sequence(body, name)
-    # display(Base.code_ircode(body, Tuple{AnyOp}))
-    body = code_mlir(body, Tuple{AnyOp}, emit_region=true)
-    transform.named_sequence(;
-        body,
-        sym_name=name,
-# not working because collect throws an error in CassetteOverlay
-# https://github.com/JuliaDebug/CassetteOverlay.jl/issues/39
-        # function_type=IR.Type((AnyOp, )=>())
-
-        function_type=IR.Type(API.mlirFunctionTypeGet(IR.context(),
-            1, [IR.Type(AnyOp)],
-            0, []))
-    )
-    nothing
-end
-named_sequence(body) = named_sequence(body, "__transform_main")
-
 @intrinsic function apply_registered_pass(target, pass_name)
     AnyOp(IR.result(transform.apply_registered_pass(target; result=IR.Type(AnyOp), pass_name)))
 end
