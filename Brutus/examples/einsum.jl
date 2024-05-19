@@ -10,6 +10,10 @@ registerAllDialects!();
 API.mlirRegisterAllPasses()
 API.mlirRegisterAllLLVMTranslations(ctx.context)
 
+"""
+Creates indexing maps and iterator types given tuples of symbols for the output_indices
+    and input_indices of an einsum expression.
+"""
 function maps(output_indices, inputs_indices)
     parallel, reduction = parse.(Ref(IR.Attribute), (
         "#linalg.iterator_type<parallel>",
@@ -66,6 +70,10 @@ abstract type ExecuteRegion end
 generate_return(cg::Brutus.CodegenContext{ExecuteRegion}, values; location) = scf.yield(values; location)
 generate_function(cg::Brutus.CodegenContext{ExecuteRegion}) = Brutus.region(cg)
 
+"""
+Intrinsic function that creates a `scf.execute_region` operations
+    containing the generated MLIR code for a function `f`, that takes no arguments.
+"""
 Brutus.@intrinsic function execute_region(f, T)
     cg = Brutus.CodegenContext{ExecuteRegion}(f, Tuple{})
     region = Brutus.generate(cg)
@@ -112,12 +120,6 @@ function (E::Einsum)(Y, XS...)
     _einsum(E, Y, XS)
 end
 
-
-# op = Brutus.generate(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
-#     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
-#     f(Y, A, B)
-# end
-    
 function f(Y, A, B)
     Einsum(((:i, :k), (:k, :j))=>(:i, :j))(Y, A, B)
 end
@@ -131,7 +133,8 @@ op = Brutus.simplify(op)
 mod = IR.Module()
 push!(IR.body(mod), op)
 
-# simplest possible lowering just converts the linalg.generic op to nested loops:
+# Simplest possible lowering just converts the linalg.generic op to nested loops.
+# This doesn't lead to high-performance but shows correctness.
 mlir_opt(mod, "one-shot-bufferize{bufferize-function-boundaries=true}")
 mlir_opt(mod, "convert-linalg-to-loops")
 
