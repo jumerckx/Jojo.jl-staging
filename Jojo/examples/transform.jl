@@ -1,10 +1,10 @@
 include("utils.jl")
 
 import MLIR: IR, API
-import Brutus
+import Jojo
 
-import Brutus.Library.Transform
-# import Brutus.Library: i64, f32, tensor
+import Jojo.Library.Transform
+# import Jojo.Library: i64, f32, tensor
 import MLIR.Dialects
 
 ctx = IR.Context()
@@ -12,7 +12,7 @@ registerAllDialects!();
 API.mlirRegisterAllPasses()
 API.mlirRegisterAllLLVMTranslations(ctx.context)
 
-Brutus.@intrinsic function _as_intrinsic(f, args, kwargs)
+Jojo.@intrinsic function _as_intrinsic(f, args, kwargs)
     f(args...; kwargs...)
 end
 function as_intrinsic(f, args...; kwargs...)
@@ -91,14 +91,14 @@ function lower(op::Transform.AnyOp)
 end
 
 abstract type NamedSequence end
-import Brutus: generate_function, generate_return
-generate_return(cg::Brutus.CodegenContext{NamedSequence}, values; location) = Dialects.transform.yield(values; location)
-function generate_function(cg::Brutus.CodegenContext{NamedSequence})
-    body = Brutus.region(cg)
+import Jojo: generate_function, generate_return
+generate_return(cg::Jojo.CodegenContext{NamedSequence}, values; location) = Dialects.transform.yield(values; location)
+function generate_function(cg::Jojo.CodegenContext{NamedSequence})
+    body = Jojo.region(cg)
     input_types = IR.Type[
-        IR.type(IR.argument(Brutus.entryblock(cg), i))
-        for i in 1:IR.nargs(Brutus.entryblock(cg))]
-    result_types = IR.Type[IR.Type.(Brutus.unpack(Brutus.returntype(cg)))...]
+        IR.type(IR.argument(Jojo.entryblock(cg), i))
+        for i in 1:IR.nargs(Jojo.entryblock(cg))]
+    result_types = IR.Type[IR.Type.(Jojo.unpack(Jojo.returntype(cg)))...]
     ftype = IR.FunctionType(input_types, result_types)
     op = Dialects.transform.named_sequence(;
         sym_name="__transform_main",
@@ -107,7 +107,7 @@ function generate_function(cg::Brutus.CodegenContext{NamedSequence})
     )
 end
 
-named_sequence_op = Brutus.CodegenContext{NamedSequence}(Tuple{Transform.AnyOp}) do op
+named_sequence_op = Jojo.CodegenContext{NamedSequence}(Tuple{Transform.AnyOp}) do op
     bias = Transform.structured_match(op; name="linalg.broadcast")
     generics = Transform.structured_match(op; name="linalg.generic")
     conv, relu = Transform.split_handle(generics, 2)
@@ -133,7 +133,7 @@ named_sequence_op = Brutus.CodegenContext{NamedSequence}(Tuple{Transform.AnyOp})
     lower(op)
 
     return
-end |> Brutus.generate
+end |> Jojo.generate
 
 named_sequence_mod = IR.Module()
 
@@ -228,10 +228,10 @@ IR.rmfromparent!(IR.Operation(named_sequence_mod))
 
 # lower to llvm
 mlir_opt(mod, "math-uplift-to-fma")
-IR.Operation(mod) |> Brutus.simplify
+IR.Operation(mod) |> Jojo.simplify
 mlir_opt(mod, "convert-bufferization-to-memref")
 lowerModuleToLLVM(mod)
-IR.Operation(mod) |> Brutus.simplify
+IR.Operation(mod) |> Jojo.simplify
 
 
 # dummy data:
@@ -243,18 +243,18 @@ output = zeros(Float32, (5, 80, 100, 128));
 # We interpret the input data as row-major arrays because the payload IR assumes this.
 # Since we're only interested in runtime performance, this doesn't really matter.
 input, filter, bias, output = map((input, filter, bias, output)) do x
-    out = Brutus.MemRef(x)
+    out = Jojo.MemRef(x)
     out.strides = reverse(Tuple([1, cumprod(reverse(size(x)))[1:end-1]...]))
     out
 end
 
 
 addr = jit(mod; opt=3)("_mlir_ciface_conv")
-@ccall $addr(output::Ref{Brutus.MemRef}, input::Ref{Brutus.MemRef}, filter::Ref{Brutus.MemRef}, bias::Ref{Brutus.MemRef}, output::Ref{Brutus.MemRef})::Nothing
+@ccall $addr(output::Ref{Jojo.MemRef}, input::Ref{Jojo.MemRef}, filter::Ref{Jojo.MemRef}, bias::Ref{Jojo.MemRef}, output::Ref{Jojo.MemRef})::Nothing
 
 using BenchmarkTools
 # on my machine: minimum 372.989ms
-@benchmark ccall(addr, Nothing, (Ref{Brutus.MemRef}, Ref{Brutus.MemRef}, Ref{Brutus.MemRef}, Ref{Brutus.MemRef}, Ref{Brutus.MemRef}), output, input, filter, bias, output)
+@benchmark ccall(addr, Nothing, (Ref{Jojo.MemRef}, Ref{Jojo.MemRef}, Ref{Jojo.MemRef}, Ref{Jojo.MemRef}, Ref{Jojo.MemRef}), output, input, filter, bias, output)
 
 
 # compare to the original payload without schedule:
@@ -264,9 +264,9 @@ mlir_opt(mod, "convert-linalg-to-loops")
 lowerModuleToLLVM(mod)
 
 addr = jit(mod; opt=3)("_mlir_ciface_conv")
-@ccall $addr(output::Ref{Brutus.MemRef}, input::Ref{Brutus.MemRef}, filter::Ref{Brutus.MemRef}, bias::Ref{Brutus.MemRef}, output::Ref{Brutus.MemRef})::Nothing
+@ccall $addr(output::Ref{Jojo.MemRef}, input::Ref{Jojo.MemRef}, filter::Ref{Jojo.MemRef}, bias::Ref{Jojo.MemRef}, output::Ref{Jojo.MemRef})::Nothing
 
 # on my machine: 7.456s
-@benchmark ccall(addr, Nothing, (Ref{Brutus.MemRef}, Ref{Brutus.MemRef}, Ref{Brutus.MemRef}, Ref{Brutus.MemRef}, Ref{Brutus.MemRef}), output, input, filter, bias, output)
+@benchmark ccall(addr, Nothing, (Ref{Jojo.MemRef}, Ref{Jojo.MemRef}, Ref{Jojo.MemRef}, Ref{Jojo.MemRef}, Ref{Jojo.MemRef}), output, input, filter, bias, output)
 
 # speedup: ~20X

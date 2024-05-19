@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
 
-using Brutus.Library: index, f32, i64, memref, MLIRMemref
-using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+using Jojo.Library: index, f32, i64, memref, MLIRMemref
+using Jojo.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
+import Jojo: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -87,7 +87,7 @@ nothing
 # end
 
 # @intrinsic function scf_for(body, initial_value::T, lb::index, ub::index, step::index)::T where T
-#     @info "body IR" @nonoverlay Base.code_ircode(body, Tuple{index, T}, interp=Brutus.MLIRInterpreter())
+#     @info "body IR" @nonoverlay Base.code_ircode(body, Tuple{index, T}, interp=Jojo.MLIRInterpreter())
 #     region = @nonoverlay generate(body, Tuple{index, T}, emit_region=true, skip_return=true)
 #     op = Dialects.scf.for_(lb, ub, step, [initial_value]; results=IR.Type[IR.Type(T)], region)
 #     return T(IR.result(op))

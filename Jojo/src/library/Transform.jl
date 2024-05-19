@@ -4,8 +4,8 @@ import MLIR: IR, API
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
 import MLIR.Dialects: transform
 using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet
-using Brutus: @intrinsic, Boollike, CodegenContext, unpack
-import Brutus: BoolTrait, generate_return, generate_function, region, entryblock, returntype, generate
+using Jojo: @intrinsic, Boollike, CodegenContext, unpack
+import Jojo: BoolTrait, generate_return, generate_function, region, entryblock, returntype, generate
 
 struct AnyOp
     value::IR.Value

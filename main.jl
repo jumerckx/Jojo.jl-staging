@@ -1,8 +1,8 @@
 using MLIR
 includet("utils.jl")
-using Brutus
-import Brutus: MemRef, @intrinsic
-using Brutus.Types
+using Jojo
+import Jojo: MemRef, @intrinsic
+using Jojo.Types
 using BenchmarkTools, MLIR, MacroTools
 
 using MLIR.Dialects: arith, index, linalg, transform, builtin
@@ -40,10 +40,10 @@ f(a, b) = (a>b) ? a+b : square(a)
 g(a::AbstractVector) = a[2]
 h(a, i) = a[i]
 
-Brutus.BoolTrait(::Type{<: i1}) = Brutus.Boollike()
+Jojo.BoolTrait(::Type{<: i1}) = Jojo.Boollike()
 
-Base.code_ircode(f, (i64, i64), interp=Brutus.MLIRInterpreter())
-@time op_f = Brutus.generate(f, Tuple{i64, i64})
+Base.code_ircode(f, (i64, i64), interp=Jojo.MLIRInterpreter())
+@time op_f = Jojo.generate(f, Tuple{i64, i64})
 @assert IR.verify(op_f)
 
 #region Running the code
@@ -64,11 +64,11 @@ addr_f = jit(mod_f; opt=3)("_mlir_ciface_f")
 
 #endregion
 
-Base.code_ircode(g, (memref{i64, 1},), interp=Brutus.MLIRInterpreter())
-op_g = Brutus.code_mlir(g, Tuple{memref{i64, 1}})
+Base.code_ircode(g, (memref{i64, 1},), interp=Jojo.MLIRInterpreter())
+op_g = Jojo.code_mlir(g, Tuple{memref{i64, 1}})
 IR.verify(op_g)
 
-op_h = Brutus.code_mlir(h, Tuple{memref{i64, 1}, Types.index})
+op_h = Jojo.code_mlir(h, Tuple{memref{i64, 1}, Types.index})
 IR.verify(op_h)
 
 #region Running the code
@@ -105,7 +105,7 @@ import LinearAlgebra.mul!
     indexing_maps = IR.Attribute.(API.mlirAffineMapAttrGet.(indexing_maps)) |> IR.Attribute
     iterator_types = IR.Attribute[parse(IR.Attribute, "#linalg.iterator_type<$type>") for type in ["parallel", "parallel", "reduction"]]
     iterator_types = IR.Attribute(iterator_types)
-    matmul_region = @nonoverlay Brutus.code_mlir((a, b, y)->linalgyield(y+(a*b)), Tuple{T, T, T}; emit_region=true, ignore_returns=true)
+    matmul_region = @nonoverlay Jojo.code_mlir((a, b, y)->linalgyield(y+(a*b)), Tuple{T, T, T}; emit_region=true, ignore_returns=true)
     op = linalg.generic(
         [A, B],
         [Y],
@@ -122,7 +122,7 @@ f(Y, A, B) = begin
 end 
 
 Base.code_ircode(f, (tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}))
-op = Brutus.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}, do_simplify=false)
+op = Jojo.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}, do_simplify=false)
 
 @assert IR.verify(op)
 

@@ -1,8 +1,8 @@
 include("utils.jl")
 
 import MLIR: IR, API
-import Brutus
-import Brutus.Library: i64, f32, tensor
+import Jojo
+import Jojo.Library: i64, f32, tensor
 import MLIR.Dialects: scf, linalg
 
 ctx = IR.Context()
@@ -55,7 +55,7 @@ end
 
 struct Einsum{T}
     desc::Pair{T}
-    Brutus.@intrinsic function Einsum(desc::Pair{T}) where {T}
+    Jojo.@intrinsic function Einsum(desc::Pair{T}) where {T}
         return new{T}(desc)
     end
 end
@@ -64,32 +64,32 @@ function maps(e::Einsum)
 end
 
 # methods to be specialised:
-import Brutus: generate_return, generate_function
+import Jojo: generate_return, generate_function
 
 abstract type ExecuteRegion end
-generate_return(cg::Brutus.CodegenContext{ExecuteRegion}, values; location) = scf.yield(values; location)
-generate_function(cg::Brutus.CodegenContext{ExecuteRegion}) = Brutus.region(cg)
+generate_return(cg::Jojo.CodegenContext{ExecuteRegion}, values; location) = scf.yield(values; location)
+generate_function(cg::Jojo.CodegenContext{ExecuteRegion}) = Jojo.region(cg)
 
-"""
+#=
 Intrinsic function that creates a `scf.execute_region` operations
     containing the generated MLIR code for a function `f`, that takes no arguments.
-"""
-Brutus.@intrinsic function execute_region(f, T)
-    cg = Brutus.CodegenContext{ExecuteRegion}(f, Tuple{})
-    region = Brutus.generate(cg)
+=#
+Jojo.@intrinsic function execute_region(f, T)
+    cg = Jojo.CodegenContext{ExecuteRegion}(f, Tuple{})
+    region = Jojo.generate(cg)
     T(scf.execute_region(;
         region,
         result_0=[IR.Type(T)]
     ) |> IR.result)
 end
-execute_region(f) = execute_region(f, only(Base.return_types(f, Tuple{}, interp=Brutus.MLIRInterpreter())))
+execute_region(f) = execute_region(f, only(Base.return_types(f, Tuple{}, interp=Jojo.MLIRInterpreter())))
 
 abstract type LinalgBody end
-generate_return(cg::Brutus.CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)
-generate_function(cg::Brutus.CodegenContext{LinalgBody}) = Brutus.region(cg)
+generate_return(cg::Jojo.CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)
+generate_function(cg::Jojo.CodegenContext{LinalgBody}) = Jojo.region(cg)
 
-Brutus.generate(
-    Brutus.CodegenContext{LinalgBody}(
+Jojo.generate(
+    Jojo.CodegenContext{LinalgBody}(
         (xs, y)-> execute_region(i64) do 
             y+prod(xs)
         end,
@@ -97,9 +97,9 @@ Brutus.generate(
     )
 )
 
-Brutus.@intrinsic function _einsum(E::Einsum, Y::T, XS) where {T<:tensor}
+Jojo.@intrinsic function _einsum(E::Einsum, Y::T, XS) where {T<:tensor}
     indexing_maps, iterator_types = maps(E)
-    region = Brutus.generate(Brutus.CodegenContext{LinalgBody}(
+    region = Jojo.generate(Jojo.CodegenContext{LinalgBody}(
         (xs, y)-> execute_region(eltype(T)) do 
             y+prod(xs)
         end,
@@ -123,10 +123,10 @@ end
 function f(Y, A, B)
     Einsum(((:i, :k), (:k, :j))=>(:i, :j))(Y, A, B)
 end
-op = Brutus.generate(f, Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}})
+op = Jojo.generate(f, Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}})
 
 # running simplification gets rid of the executeregion (since there's only one block in the region)
-op = Brutus.simplify(op)
+op = Jojo.simplify(op)
 
 @show op
 
@@ -142,13 +142,13 @@ lowerModuleToLLVM(mod)
 
 addr = jit(mod)("_mlir_ciface_f")
 
-a = rand(Float32, 1024, 1024)
-b = rand(Float32, 1024, 1024)
-c = zeros(Float32, 1024, 1024)
+a = rand(Float32, 1024, 1024);
+b = rand(Float32, 1024, 1024);
+c = zeros(Float32, 1024, 1024);
 @ccall $addr(
-    Brutus.MemRef(c)::Ref{Brutus.MemRef}, # first argument is the output
-    Brutus.MemRef(c)::Ref{Brutus.MemRef},
-    Brutus.MemRef(a)::Ref{Brutus.MemRef},
-    Brutus.MemRef(b)::Ref{Brutus.MemRef})::Nothing
+    Jojo.MemRef(c)::Ref{Jojo.MemRef}, # first argument is the output
+    Jojo.MemRef(c)::Ref{Jojo.MemRef},
+    Jojo.MemRef(a)::Ref{Jojo.MemRef},
+    Jojo.MemRef(b)::Ref{Jojo.MemRef})::Nothing
 
 @assert c ≈ a*b

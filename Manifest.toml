@@ -61,9 +61,9 @@ git-tree-sha1 = "0c5f81f47bbbcf4aea7b2959135713459170798b"
 uuid = "62783981-4cbd-42fc-bca8-16325de8dc4b"
 version = "0.1.5"
 
-[[deps.Brutus]]
+[[deps.Jojo]]
 deps = ["CassetteOverlay", "CodeInfoTools", "MLIR", "MacroTools"]
-path = "Brutus"
+path = "Jojo"
 uuid = "10db2648-50ef-49bd-9477-c1b55d74eda0"
 version = "0.1.0"
 

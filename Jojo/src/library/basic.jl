@@ -2,8 +2,8 @@ import MLIR.IR
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
 import MLIR.Dialects
 using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet, mlirF16TypeGet
-using Brutus: @intrinsic, Boollike
-import Brutus: BoolTrait
+using Jojo: @intrinsic, Boollike
+import Jojo: BoolTrait
 
 ### int ###
 struct MLIRInteger{N} <: Integer

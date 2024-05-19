@@ -101,7 +101,7 @@ function source2source(ir::CC.IRCode)
         ir,
         CC.SSAValue(1),
         CC.NewInstruction(
-            Expr(:call, Brutus.start_block),
+            Expr(:call, Jojo.start_block),
             Any,
             CC.NoCallInfo(),
             Int32(1),
@@ -115,7 +115,7 @@ function source2source(ir::CC.IRCode)
             ir,
             i,
             CC.NewInstruction(
-                Expr(:call, Brutus.start_block),
+                Expr(:call, Jojo.start_block),
                 Any,
                 CC.NoCallInfo(),
                 Int32(1),
@@ -174,7 +174,7 @@ function source2source(ir::CC.IRCode)
                 Core.Compiler.insert_node_here!(
                     compact,
                     Core.Compiler.NewInstruction(
-                        Expr(:call, Brutus.my_gotoifnot, inst.cond, true_dest, false_dest, true_args, false_args),
+                        Expr(:call, Jojo.my_gotoifnot, inst.cond, true_dest, false_dest, true_args, false_args),
                         Any,
                         Core.Compiler.NoCallInfo(),
                         Int32(1),
@@ -187,7 +187,7 @@ function source2source(ir::CC.IRCode)
                 Core.Compiler.insert_node_here!(
                     compact,
                     Core.Compiler.NewInstruction(
-                        Expr(:call, Brutus.my_goto, inst.label, ssa),
+                        Expr(:call, Jojo.my_goto, inst.label, ssa),
                         Any,
                         Core.Compiler.NoCallInfo(),
                         Int32(1),
@@ -204,10 +204,10 @@ function source2source(ir::CC.IRCode)
                     prev_bb = compact.active_bb
                 end
     
-                compact[ssa][:inst] = Expr(:call, Brutus.my_phi, compact[ssa][:type], current_phi)
+                compact[ssa][:inst] = Expr(:call, Jojo.my_phi, compact[ssa][:type], current_phi)
             elseif inst isa Core.ReturnNode
                 if isdefined(inst, :val)
-                    compact[ssa][:inst] = Expr(:call, Brutus.my_return, inst.val)
+                    compact[ssa][:inst] = Expr(:call, Jojo.my_return, inst.val)
                 else
                     compact[ssa][:inst] = :nothing
                 end
@@ -218,7 +218,7 @@ function source2source(ir::CC.IRCode)
             compact[ssa][:flag] = CC.IR_FLAG_REFINED
         elseif Meta.isexpr(inst, :invoke)
             _, called_func, args... = inst.args
-            if called_func == Brutus.bool_conversion_intrinsic
+            if called_func == Jojo.bool_conversion_intrinsic
                 compact[ssa][:inst] = only(args)
             end
         end

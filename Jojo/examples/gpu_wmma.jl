@@ -1,9 +1,9 @@
 include("utils.jl")
 
 import MLIR: IR, API
-import Brutus
-import Brutus.Library.GPU: MMA_Matrix, OperandType, AOp, BOp, COp, gpu_module, GPUFunc
-import Brutus.Library: MLIRMemref, index, f32, f16
+import Jojo
+import Jojo.Library.GPU: MMA_Matrix, OperandType, AOp, BOp, COp, gpu_module, GPUFunc
+import Jojo.Library: MLIRMemref, index, f32, f16
 import MLIR: Dialects
 
 ctx = IR.Context()
@@ -11,7 +11,7 @@ registerAllDialects!();
 API.mlirRegisterAllPasses()
 API.mlirRegisterAllLLVMTranslations(ctx.context)
 
-Brutus.@intrinsic function mma_load(src::MLIRMemref{T, 2}, operandtype, I::Tuple{index, index}) where {T<:Union{f32, f16}}
+Jojo.@intrinsic function mma_load(src::MLIRMemref{T, 2}, operandtype, I::Tuple{index, index}) where {T<:Union{f32, f16}}
     I = I .- 1
     T_out = MMA_Matrix{T, operandtype}
     return T_out(
@@ -25,7 +25,7 @@ end
 mma_load(src, operandtype, I) = mma_load(src, operandtype, (index(I[1]), index(I[2])))
 mma_load(src, operandtype) = mma_load(src, operandtype, (index(1), index(1)))
 
-Brutus.@intrinsic function _mma_store(dest::D, src::S, I::Tuple{index, index}) where {T, D<:MLIRMemref{T}, S<:MMA_Matrix{T}}
+Jojo.@intrinsic function _mma_store(dest::D, src::S, I::Tuple{index, index}) where {T, D<:MLIRMemref{T}, S<:MMA_Matrix{T}}
     I = I .- 1
     Dialects.gpu.subgroup_mma_store_matrix(
         src, dest, I;
@@ -35,7 +35,7 @@ end
 mma_store(dest, src, I) = _mma_store(dest, src, (index(I[1]), index(I[2])))
 mma_store(dest, src) = _mma_store(dest, src, (index(1), index(1)))
 
-Brutus.@intrinsic function mma_compute(a::A, b::B, c::C) where {T, A<:MMA_Matrix{T, AOp}, B<:MMA_Matrix{T, BOp}, C<:MMA_Matrix{T, COp}}
+Jojo.@intrinsic function mma_compute(a::A, b::B, c::C) where {T, A<:MMA_Matrix{T, AOp}, B<:MMA_Matrix{T, BOp}, C<:MMA_Matrix{T, COp}}
     C(
         IR.result(Dialects.gpu.subgroup_mma_compute(
             a, b, c;
@@ -57,9 +57,9 @@ T_in = MLIRMemref{f16, 2, Tuple{16, 16}, nothing, Tuple{16, 1}, 0}
 
 gpu_mod_op = gpu_module([
     IR.attr!(
-        Brutus.generate(Brutus.CodegenContext{GPUFunc}(mma, Tuple{T_in, T_in, T_in})),
+        Jojo.generate(Jojo.CodegenContext{GPUFunc}(mma, Tuple{T_in, T_in, T_in})),
         "gpu.kernel", IR.UnitAttribute())
-])  |> Brutus.simplify
+])  |> Jojo.simplify
 
 mod = IR.Module()
 push!(IR.body(mod), gpu_mod_op)

@@ -1,9 +1,9 @@
 include("utils.jl")
 
 import MLIR: IR, API
-import Brutus
-import Brutus.Library.GPU: GPUFunc, gpu_module
-import Brutus.Library: MLIRMemref, f16
+import Jojo
+import Jojo.Library.GPU: GPUFunc, gpu_module
+import Jojo.Library: MLIRMemref, f16
 import MLIR.Dialects: linalg
 
 ctx = IR.Context()
@@ -13,20 +13,20 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 
 import LinearAlgebra: mul!
 
-import Brutus: generate_return, generate_function, region, CodegenContext
+import Jojo: generate_return, generate_function, region, CodegenContext
 
 abstract type LinalgBody end
-generate_return(cg::Brutus.CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)
-generate_function(cg::Brutus.CodegenContext{LinalgBody}) = region(cg)
+generate_return(cg::Jojo.CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)
+generate_function(cg::Jojo.CodegenContext{LinalgBody}) = region(cg)
 
-Brutus.@intrinsic function mul!(c::MLIRMemref{T}, a::MLIRMemref{T}, b::MLIRMemref{T})::MLIRMemref{T} where {T}
-    reg = Brutus.generate(Brutus.CodegenContext{LinalgBody}((a, b, c) -> c + a*b, Tuple{T, T, T}))
+Jojo.@intrinsic function mul!(c::MLIRMemref{T}, a::MLIRMemref{T}, b::MLIRMemref{T})::MLIRMemref{T} where {T}
+    reg = Jojo.generate(Jojo.CodegenContext{LinalgBody}((a, b, c) -> c + a*b, Tuple{T, T, T}))
     result_tensors = IR.Type[]
     linalg.matmul([a, b], [c]; result_tensors, region=reg)
     return c
 end
 
-Brutus.@intrinsic assume_alignment(m::MLIRMemref) = begin
+Jojo.@intrinsic assume_alignment(m::MLIRMemref) = begin
     Dialects.memref.assume_alignment(m, alignment=Int32(128))
     nothing
 end
@@ -35,7 +35,7 @@ const MMAOperand{T, S} = MLIRMemref{T, 2, S, 1, Tuple{16, 1}, 0}
 
 gpu_mod_op = gpu_module([
     IR.attr!(
-        Brutus.generate(Brutus.CodegenContext{GPUFunc}(Tuple{MMAOperand{f16, Tuple{16,16}}, MMAOperand{f16, Tuple{16,8}}, MMAOperand{f16, Tuple{16,8}}}) do a, b, c
+        Jojo.generate(Jojo.CodegenContext{GPUFunc}(Tuple{MMAOperand{f16, Tuple{16,16}}, MMAOperand{f16, Tuple{16,8}}, MMAOperand{f16, Tuple{16,8}}}) do a, b, c
             assume_alignment(a)
             assume_alignment(b)
             assume_alignment(c)

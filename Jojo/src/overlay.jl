@@ -67,8 +67,8 @@ function intrinsic_(expr)
     end
 
     return quote
-        Brutus.reset_cache!()
+        Jojo.reset_cache!()
         $(esc(expr))
-        Brutus.is_intrinsic(::Type{<:Tuple{Brutus._typeof($(esc(dict[:name]))), $(esc.(argtypes)...)}}) where {$(esc.(dict[:whereparams])...)} = true
+        Jojo.is_intrinsic(::Type{<:Tuple{Jojo._typeof($(esc(dict[:name]))), $(esc.(argtypes)...)}}) where {$(esc.(dict[:whereparams])...)} = true
     end
 end

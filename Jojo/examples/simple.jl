@@ -1,8 +1,8 @@
 include("utils.jl")
 
 import MLIR: IR, API
-import Brutus
-import Brutus.Library: i64
+import Jojo
+import Jojo.Library: i64
 
 ctx = IR.Context()
 registerAllDialects!();
@@ -12,9 +12,9 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 f(a, b) = a>b ? a : a+b
 
 # To see the Julia SSA IR from which the MLIR is generated:
-display(Brutus.CodegenContext(f, Tuple{i64, i64}).ir)
+display(Jojo.CodegenContext(f, Tuple{i64, i64}).ir)
 
-op = Brutus.generate(f, Tuple{i64, i64});
+op = Jojo.generate(f, Tuple{i64, i64});
 display(op)
 
 mod = IR.Module();

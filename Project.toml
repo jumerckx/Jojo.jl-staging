@@ -1,5 +1,5 @@
 [deps]
-Brutus = "10db2648-50ef-49bd-9477-c1b55d74eda0"
+Jojo = "10db2648-50ef-49bd-9477-c1b55d74eda0"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CassetteOverlay = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
 Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"

@@ -116,7 +116,7 @@ _type(x::CC.Conditional) = Union{_type(x.thentype), _type(x.elsetype)}
 is_intrinsic(::Any) = false
 
 macro is_intrinsic(sig)
-    return esc(:(Brutus.is_intrinsic(::Type{<:$sig}) = true))
+    return esc(:(Jojo.is_intrinsic(::Type{<:$sig}) = true))
 end
 
 function CC.inlining_policy(interp::MLIRInterpreter,
@@ -192,7 +192,7 @@ function insert_bool_conversions_pass(mi, src)
     for (v, st) in b
         if st isa Core.GotoIfNot
             arg = st.cond isa Core.SSAValue ? var(st.cond.id + offsets[st.cond.id]) : st.cond
-            b[v] = Statement(Expr(:call, GlobalRef(Brutus, :mlir_bool_conversion), arg))
+            b[v] = Statement(Expr(:call, GlobalRef(Jojo, :mlir_bool_conversion), arg))
             push!(b, Core.GotoIfNot(v, st.dest))
             insert!(offsets, v.id)
         elseif st isa Core.GotoNode

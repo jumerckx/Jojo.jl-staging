@@ -1,8 +1,8 @@
 using MLIR
 includet("utils.jl")
-using Brutus
-import Brutus: MemRef, @intrinsic, @code_mlir
-using Brutus.Types
+using Jojo
+import Jojo: MemRef, @intrinsic, @code_mlir
+using Jojo.Types
 using BenchmarkTools, MLIR, MacroTools
 using StaticArrays
 
@@ -29,7 +29,7 @@ API.mlirRegisterAllLLVMTranslations(ctx.context)
 f(a, b) = a*b
 
 Base.code_ircode(f, Tuple{Complex{i64}, Complex{i64}})
-op = Brutus.code_mlir(f, Tuple{Complex{i64}, Complex{i64}})
+op = Jojo.code_mlir(f, Tuple{Complex{i64}, Complex{i64}})
 mod = IR.Module()
 push!(IR.get_body(mod), op)
 lowerModuleToLLVM(mod)
@@ -48,7 +48,7 @@ end
 g(a, b) = Point(a, a+b)
 
 Base.code_ircode(g, Tuple{Complex{i64}, Complex{i64}})
-op = Brutus.code_mlir(g, Tuple{Complex{i64}, Complex{i64}})
+op = Jojo.code_mlir(g, Tuple{Complex{i64}, Complex{i64}})
 
 mod = IR.Module()
 push!(IR.get_body(mod), op)
@@ -61,5 +61,5 @@ result[]
 
 ###########################################################################################
 
-Brutus.unpack(Point{Complex{i64}})
-Brutus.unpack(Point{Complex{Int}})
+Jojo.unpack(Point{Complex{i64}})
+Jojo.unpack(Point{Complex{Int}})

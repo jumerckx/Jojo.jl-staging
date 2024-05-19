@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
 
-using Brutus.Library: index, f32, i64, memref, MLIRMemref
-import Brutus.Library.Transform
-import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+using Jojo.Library: index, f32, i64, memref, MLIRMemref
+import Jojo.Library.Transform
+import Jojo: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -95,7 +95,7 @@ function lower(op::Transform.AnyOp)
 end
 
 abstract type NamedSequence end
-import Brutus: generate_function, generate_return
+import Jojo: generate_function, generate_return
 generate_return(cg::CodegenContext{NamedSequence}, values; location) = Dialects.transform.yield(values; location)
 function generate_function(cg::CodegenContext{NamedSequence})
     body = region(cg)

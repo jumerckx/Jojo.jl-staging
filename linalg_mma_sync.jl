@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
 
-using Brutus.Library: index, f32, f16, i64, memref, MLIRMemref
-using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+using Jojo.Library: index, f32, f16, i64, memref, MLIRMemref
+using Jojo.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
+import Jojo: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -18,7 +18,7 @@ mlirRegisterAllLLVMTranslations(ctx.context)
 
 import LinearAlgebra: mul!
 
-import Brutus: generate_return, generate_function, region, CodegenContext
+import Jojo: generate_return, generate_function, region, CodegenContext
 
 abstract type LinalgBody end
 generate_return(cg::CodegenContext{LinalgBody}, values; location) = linalg.yield(values; location)

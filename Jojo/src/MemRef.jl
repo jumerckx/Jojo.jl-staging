@@ -25,5 +25,5 @@ function MemRef(a::Array{T,N}) where {T,N}
         )
 end
 
-Base.show(io::IO, A::Brutus.MemRef{T, N}) where {T, N} = print(io, "Brutus.MemRef{$T,$N} (size $(join(A.sizes, "×")))")
-Base.show(io::IO, ::MIME{Symbol("text/plain")}, X::Brutus.MemRef) = show(io, X)
+Base.show(io::IO, A::Jojo.MemRef{T, N}) where {T, N} = print(io, "Jojo.MemRef{$T,$N} (size $(join(A.sizes, "×")))")
+Base.show(io::IO, ::MIME{Symbol("text/plain")}, X::Jojo.MemRef) = show(io, X)

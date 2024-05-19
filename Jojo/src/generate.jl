@@ -107,7 +107,7 @@ function generate(cg::AbstractCodegenContext; emit_region=false, skip_return=fal
             @debug "Working on: $(inst)"
             if inst == nothing
                 inst = Core.GotoNode(block_id+1)
-                line = Core.LineInfoNode(Brutus, :code_mlir, Symbol(@__FILE__), Int32(@__LINE__), Int32(@__LINE__))
+                line = Core.LineInfoNode(Jojo, :code_mlir, Symbol(@__FILE__), Int32(@__LINE__), Int32(@__LINE__))
             else
                 line = ir(cg).linetable[stmt[:line]]
             end

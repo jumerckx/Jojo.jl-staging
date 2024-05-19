@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
 
-using Brutus.Library: index, f32, i64, memref, MLIRMemref
-import Brutus.Library.Transform
-import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+using Jojo.Library: index, f32, i64, memref, MLIRMemref
+import Jojo.Library.Transform
+import Jojo: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -20,7 +20,7 @@ mlirRegisterAllLLVMTranslations(ctx.context)
 #     Dialects.scf.yield(results)
 # end
 
-import Brutus: generate_return, generate_function
+import Jojo: generate_return, generate_function
 
 abstract type LoopBody end
 

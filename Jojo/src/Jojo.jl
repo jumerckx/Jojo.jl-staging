@@ -1,4 +1,4 @@
-module Brutus
+module Jojo
 
 using MLIR.IR
 using MLIR: API
@@ -14,4 +14,4 @@ include("generate.jl")
 include("src2src.jl")
 include("library/Library.jl")
 
-end # module Brutus
+end # module Jojo

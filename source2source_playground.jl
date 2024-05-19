@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
-import Brutus
-using Brutus.Library: index, f32, i64, memref, MLIRMemref
-import Brutus.Library.Transform
-import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+import Jojo
+using Jojo.Library: index, f32, i64, memref, MLIRMemref
+import Jojo.Library.Transform
+import Jojo: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -68,21 +68,21 @@ function create_operation(
         end
         op = IR.Operation(op, true)
     end
-    if (Brutus.currentblockindex(Brutus.codegencontext()) != 0)
-        push!(Brutus.currentblock(Brutus.codegencontext()), op)
+    if (Jojo.currentblockindex(Jojo.codegencontext()) != 0)
+        push!(Jojo.currentblock(Jojo.codegencontext()), op)
     end
     op
 end
 
 function run(f, type)
-    cg = Brutus.CodegenContext(f, type)
+    cg = Jojo.CodegenContext(f, type)
     @info "original IR" cg.ir
-    Brutus.codegencontext!(cg) do
-        f = Brutus.source2source(cg.ir)
+    Jojo.codegencontext!(cg) do
+        f = Jojo.source2source(cg.ir)
         f(cg.args[2:end]...)
-        Brutus.region(cg)
-        Brutus.setcurrentblockindex!(cg, 0) # hacky way to signal that we don't want to newly created operations to any block.
-        Brutus.generate_function(cg)
+        Jojo.region(cg)
+        Jojo.setcurrentblockindex!(cg, 0) # hacky way to signal that we don't want to newly created operations to any block.
+        Jojo.generate_function(cg)
     end
 end
 
@@ -126,7 +126,7 @@ nothing
 
 # begin
 
-# cg = Brutus.CodegenContext(Tuple{i64, i64}) do a, b
+# cg = Jojo.CodegenContext(Tuple{i64, i64}) do a, b
 #     # if (Complex(a, b)*Complex(a, b)).re + b > b
 #     #     return b
 #     # end
@@ -146,14 +146,14 @@ nothing
 # display(cg.ir)
 # display(cg.ir.cfg.index)
 
-# # ir = Brutus.source2source(cg.ir)
+# # ir = Jojo.source2source(cg.ir)
 
 # end
 
-# @time Brutus.codegencontext!(cg) do
-#     f = Brutus.source2source(cg.ir)
+# @time Jojo.codegencontext!(cg) do
+#     f = Jojo.source2source(cg.ir)
 #     f(cg.args[2:end]...)
-#     # Brutus.generate_function(cg)
+#     # Jojo.generate_function(cg)
 # end
 
 

@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
 
-using Brutus.Library: index, f32, f16, i64, memref, MLIRMemref
-using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Brutus: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
+using Jojo.Library: index, f32, f16, i64, memref, MLIRMemref
+using Jojo.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
+import Jojo: MemRef, @intrinsic, MLIRInterpreter, generate, unpack, entryblock, returntype, region, CodegenContext, simplify
 using BenchmarkTools, MLIR, MacroTools
 
 import MLIR.Dialects
@@ -16,7 +16,7 @@ registerAllDialects!();
 mlirRegisterAllPasses()
 mlirRegisterAllLLVMTranslations(ctx.context)
 
-import Brutus.Library.GPU: MMA_Matrix, OperandType, AOp, BOp, COp
+import Jojo.Library.GPU: MMA_Matrix, OperandType, AOp, BOp, COp
 
 @intrinsic function mma_load(src::MLIRMemref{T, 2}, operandtype, I::Tuple{index, index}) where {T<:Union{f32, f16}}
     I = I .- 1

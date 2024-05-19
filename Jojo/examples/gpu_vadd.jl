@@ -1,9 +1,9 @@
 include("utils.jl")
 
 import MLIR: IR, API
-import Brutus
-using Brutus.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Brutus.Library: i64, MLIRMemref
+import Jojo
+using Jojo.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
+import Jojo.Library: i64, MLIRMemref
 
 ctx = IR.Context()
 registerAllDialects!();
@@ -17,13 +17,13 @@ function vadd(a, b, c)
 end
 
 T_in = MLIRMemref{f32, 1, nothing, nothing, nothing, 0}
-Base.code_ircode(vadd, Tuple{T_in, T_in, T_in}, interp=Brutus.MLIRInterpreter())
+Base.code_ircode(vadd, Tuple{T_in, T_in, T_in}, interp=Jojo.MLIRInterpreter())
 
 gpu_mod_op = gpu_module([
     IR.attr!(
-        Brutus.generate(Brutus.CodegenContext{GPUFunc}(vadd, Tuple{T_in, T_in, T_in})),
+        Jojo.generate(Jojo.CodegenContext{GPUFunc}(vadd, Tuple{T_in, T_in, T_in})),
         "gpu.kernel", IR.UnitAttribute()),
-    ]) |> Brutus.simplify
+    ]) |> Jojo.simplify
 
 mod = IR.Module()
 push!(IR.body(mod), gpu_mod_op)

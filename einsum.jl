@@ -1,9 +1,9 @@
 using MLIR
 includet("utils.jl")
-using Brutus
-import Brutus: MemRef, @intrinsic, @code_mlir
-using Brutus.Types
-using Brutus.Types: MLIRFloat
+using Jojo
+import Jojo: MemRef, @intrinsic, @code_mlir
+using Jojo.Types
+using Jojo.Types: MLIRFloat
 using BenchmarkTools, MLIR, MacroTools
 
 using MLIR.Dialects: arith, index, linalg, transform, builtin
@@ -99,7 +99,7 @@ end
 
 @intrinsic function (E::Einsum{I, O})(Y::T, XS::Vararg{tensor})::T where {I, O, T<:tensor}
     indexing_maps, iterator_types = maps(E)
-    region = @nonoverlay Brutus.code_mlir(
+    region = @nonoverlay Jojo.code_mlir(
         (xs, y)->linalgyield(y+prod(xs)),
         # (y, xs)->linalgyield(y+prod(xs)),
         Tuple{Tuple{eltype.(XS)...}, eltype(Y)},
@@ -116,13 +116,13 @@ end
     return tensor{T, 2}(IR.result(op))
 end
 
-Brutus.code_mlir(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
+Jojo.code_mlir(Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}}) do Y, A, B
     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
     f(Y, A, B)
 end
 
 # f(Y, A, B) = Einsum(((:i, :k), (:k, :j))=>(:i, :j))(Y, A, B)
-# Brutus.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}})
+# Jojo.code_mlir(f, Tuple{tensor{i64, 2}, tensor{i64, 2}, tensor{i64, 2}})
 
 Base.code_ircode(
         (args)->linalgyield(args[end]+prod(args[1:end-1])),
@@ -131,29 +131,29 @@ Base.code_ircode(
 
 ###########################################################################
 
-Base.promote_rule(::Type{T}, ::Type{I}) where {T<:Brutus.Types.MLIRInteger, I<:Integer} = T
+Base.promote_rule(::Type{T}, ::Type{I}) where {T<:Jojo.Types.MLIRInteger, I<:Integer} = T
 
-@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T <: Brutus.Types.MLIRInteger}
+@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T <: Jojo.Types.MLIRInteger}
     op = arith.constant(value=Attribute(x), result=IR.Type(T))
     T(IR.result(op))
 end
 
-Brutus.code_mlir(Tuple{i64}) do a
+Jojo.code_mlir(Tuple{i64}) do a
     a+2
 end
 
 
-Base.promote_rule(::Type{Brutus.Types.MLIRIndex}, ::Type{I}) where {I<:Integer} = Brutus.Types.MLIRIndex
+Base.promote_rule(::Type{Jojo.Types.MLIRIndex}, ::Type{I}) where {I<:Integer} = Jojo.Types.MLIRIndex
 
-@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T<:Brutus.Types.MLIRIndex}
+@intrinsic function Base.convert(::Type{T}, x::Integer)::T where {T<:Jojo.Types.MLIRIndex}
     op = index.constant(value=Attribute(x, IR.IndexType()), result=IR.Type(T))
     T(IR.result(op))
 end
-@intrinsic function Base.:+(a::T, b::T)::T where {T<:Brutus.Types.MLIRIndex}
+@intrinsic function Base.:+(a::T, b::T)::T where {T<:Jojo.Types.MLIRIndex}
     T(IR.result(index.add(a, b)))
 end
 
-Brutus.code_mlir(Tuple{i64, Types.index}) do a, b
+Jojo.code_mlir(Tuple{i64, Types.index}) do a, b
     (a+2, b+1)
 end
 
@@ -163,9 +163,9 @@ end
 
 ###########################################################################
 
-Base.promote_rule(::Type{Brutus.Types.MLIRInteger{A}}, y::Type{Brutus.Types.MLIRInteger{B}}) where {A, B} = Brutus.Types.MLIRInteger{max(A, B)}
+Base.promote_rule(::Type{Jojo.Types.MLIRInteger{A}}, y::Type{Jojo.Types.MLIRInteger{B}}) where {A, B} = Jojo.Types.MLIRInteger{max(A, B)}
 
-@intrinsic function Base.convert(::Type{T}, x::Brutus.Types.MLIRInteger{X})::T where {N, T<:Brutus.Types.MLIRInteger{N}, X}
+@intrinsic function Base.convert(::Type{T}, x::Jojo.Types.MLIRInteger{X})::T where {N, T<:Jojo.Types.MLIRInteger{N}, X}
     if (N > X)
         op = arith.extsi(x, out=IR.Type(T))
     else
@@ -180,7 +180,7 @@ Base.code_ircode(Tuple{tensor{f64, 2}, tensor{f64, 2}, tensor{f64, 2}}) do Y, A,
     f(Y, A, B)
 end
 
-op() = Brutus.code_mlir(Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}}, fname="f") do Y, A, B
+op() = Jojo.code_mlir(Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}}, fname="f") do Y, A, B
     f = Einsum(((:i, :k), (:k, :j))=>(:i, :j))
     f(Y, A, B)
 end
@@ -202,7 +202,7 @@ end
 
 begin
     function ns()
-        region = Brutus.code_mlir(Tuple{}, ignore_returns=true, emit_region=true) do 
+        region = Jojo.code_mlir(Tuple{}, ignore_returns=true, emit_region=true) do 
             Transform.named_sequence() do op
                 matched = Transform.structured_match(op, "linalg.generic")
 
@@ -270,7 +270,7 @@ begin
     # mlir_opt(mod, "mem2reg")
     display(mod)
     println("\n---------------------------\n")
-    display(Brutus.simplify(mod))
+    display(Jojo.simplify(mod))
 end
 
 

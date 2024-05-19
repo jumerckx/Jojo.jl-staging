@@ -4,9 +4,9 @@ import MLIR.IR
 using MLIR.IR: Value, Attribute, get_value, result, Operation, Convertible, context, IndexType, MLIRValueTrait
 import MLIR.Dialects
 using MLIR.API: mlirMemRefTypeGet, mlirStridedLayoutAttrGet, mlirRankedTensorTypeGet, mlirIntegerTypeGet, mlirShapedTypeGetDynamicSize, mlirF64TypeGet, mlirF32TypeGet
-using Brutus: @intrinsic, Boollike, CodegenContext, unpack
-import Brutus: BoolTrait, generate_return, generate_function, region, entryblock, returntype
-using Brutus.Library: index, MLIRMemref, i8, i32, f16, f32
+using Jojo: @intrinsic, Boollike, CodegenContext, unpack
+import Jojo: BoolTrait, generate_return, generate_function, region, entryblock, returntype
+using Jojo.Library: index, MLIRMemref, i8, i32, f16, f32
 
 abstract type OperandType end
 struct AOp <: OperandType end
