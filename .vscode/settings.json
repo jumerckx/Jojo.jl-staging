@@ -1,0 +1,8 @@
+{
+    "workbench.colorCustomizations": {
+        "activityBar.background": "#382C09",
+        "titleBar.activeBackground": "#4E3E0D",
+        "titleBar.activeForeground": "#FDFAF2"
+    },
+    "julia.executablePath": "julia +1.11"
+}

@@ -1,16 +1,19 @@
+name = "Jojo"
+uuid = "10db2648-50ef-49bd-9477-c1b55d74eda0"
+authors = ["jumerckx "]
+version = "0.1.0"
+
 [deps]
-Jojo = "10db2648-50ef-49bd-9477-c1b55d74eda0"
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CassetteOverlay = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
-Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
 CodeInfoTools = "bc773b8a-8374-437a-b9f2-0e9785855863"
-Cthulhu = "f68482b8-f384-11e8-15f7-abe071a5a75f"
-Infiltrator = "5903a43b-9cc3-4c30-8d17-598619ec4e9b"
-LoopVectorization = "bdcacae8-1622-11e9-2a5c-532679323890"
 MLIR = "bfde9dd4-8f40-4a1e-be09-1475335e1c92"
 MLIR_jll = "a70bccb4-a5c0-5e2e-a329-e731972457e8"
 MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
-NaNMath = "77ba4419-2d1f-58cd-9bb1-8ffee604a2e3"
-Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
-SnoopCompile = "aa65fe97-06da-5843-b5b1-d5d13cad87d2"
-StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+
+[compat]
+BenchmarkTools = "1.5.0"
+CUDA = "5.4.0"
+CodeInfoTools = "0.3.5"
+MLIR_jll = "16.0.6"
