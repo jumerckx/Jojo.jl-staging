@@ -95,26 +95,25 @@ function get_block_args(phi_nodes, from, to)
 end
 
 function source2source(ir::CC.IRCode)
-    phi_nodes = collect_phi_nodes(ir)
-    @info phi_nodes
-    compact = CC.IncrementalCompact(ir, #=allow_cfg_transforms=# true)
-
     # insert calls to start_block at the beginning of each block and add explicit gotos if they are missing.
     #   first block is handled separately:
-    CC.insert_node_here!(
-        compact,
+    CC.insert_node!(
+        ir,
+        CC.SSAValue(1),
         CC.NewInstruction(
             Expr(:call, Brutus.start_block),
             Any,
             CC.NoCallInfo(),
             Int32(1),
             CC.IR_FLAG_REFINED
-        ))
-    #   remainder of the blocks:
+        )
+    )
+    # remainder of the blocks:
     for i in ir.cfg.index
+        @warn i ir.cfg.index
         CC.insert_node!(
-            compact,
-            CC.OldSSAValue(i),
+            ir,
+            i,
             CC.NewInstruction(
                 Expr(:call, Brutus.start_block),
                 Any,
@@ -125,8 +124,8 @@ function source2source(ir::CC.IRCode)
         )
         if !(ir.stmts[i-1][:inst] isa Union{Core.GotoIfNot, Core.GotoNode, Core.ReturnNode})
             CC.insert_node!(
-                compact,
-                CC.OldSSAValue(i-1),
+                ir,
+                CC.SSAValue(i-1),
                 CC.NewInstruction(
                     Core.GotoNode(CC.block_for_inst(ir.cfg.blocks, i)),
                     Any,
@@ -136,11 +135,16 @@ function source2source(ir::CC.IRCode)
                 ),
                 true
             )
-        end 
+        end      
     end
+
+    phi_nodes = collect_phi_nodes(ir)
+    @info phi_nodes
+    compact = CC.IncrementalCompact(ir, #=allow_cfg_transforms=# true)
 
     prev_bb = compact.active_bb
     current_phi = 1
+
     # Core of the transformation:
     # replace GotoIfNot, GotoNode, PhiNode, ReturnNode with calls to MLIR generation functions.
     for ((original_idx, idx), inst) in compact
@@ -263,6 +267,7 @@ function source2source(ir::CC.IRCode)
 
     # errors if invalid
     CC.verify_ir(ir)
+    @info "final IR" ir
     
     return Core.OpaqueClosure(ir; do_compile=true)
 end

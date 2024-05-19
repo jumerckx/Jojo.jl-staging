@@ -68,17 +68,40 @@ function create_operation(
         end
         op = IR.Operation(op, true)
     end
-    push!(Brutus.currentblock(Brutus.codegencontext()), op)
+    if (Brutus.currentblockindex(Brutus.codegencontext()) != 0)
+        push!(Brutus.currentblock(Brutus.codegencontext()), op)
+    end
     op
 end
 
-cg = Brutus.CodegenContext(Tuple{i64, i64}) do a, b
-    # if (Complex(a, b)*Complex(a, b)).re + b > b
-    #     return b
-    # end
-    # return a
+function run(f, type)
+    cg = Brutus.CodegenContext(f, type)
+    @info "original IR" cg.ir
+    Brutus.codegencontext!(cg) do
+        f = Brutus.source2source(cg.ir)
+        f(cg.args[2:end]...)
+        Brutus.region(cg)
+        Brutus.setcurrentblockindex!(cg, 0) # hacky way to signal that we don't want to newly created operations to any block.
+        Brutus.generate_function(cg)
+    end
+end
 
-    # currently fails because of bug in phi-node conversion:
+@time r = run(Tuple{i64, i64}) do a, b
+    a+b
+end
+
+@time run(Tuple{i64, i64}) do a, b
+    if (Complex(a, b)*Complex(a, b)).re + b > b
+        return b
+    end
+    return a
+end
+
+run(Tuple{Complex{i64}}) do a
+    Complex(a.re + a.im, a.re - a.im)
+end
+
+run(Tuple{i64, i64}) do a,b
     if (a>b)
         d = a
         e = b
@@ -89,25 +112,48 @@ cg = Brutus.CodegenContext(Tuple{i64, i64}) do a, b
     return d+e
 end
 
-ir = Brutus.source2source(cg.ir)
-
-@time Brutus.codegencontext!(cg) do
-    f = Brutus.source2source(cg.ir)
-    f(cg.args[2:end]...)
-    # Brutus.generate_function(cg)
-end
-
-function run(f, type)
-    cg = Brutus.CodegenContext(f, type)
-    Brutus.codegencontext!(cg) do
-        f = Brutus.source2source(cg.ir)
-        f(cg.args[2:end]...)
+function max(a, b)
+    if (a >= b)
+        c = a
+    else
+        c = b
     end
+    return c
 end
+run(max, Tuple{i64, i64})
 
-run(Tuple{i64, i64}) do a, b
-    if (Complex(a, b)*Complex(a, b)).re + b > b
-        return b
-    end
-    return a
-end
+nothing
+
+# begin
+
+# cg = Brutus.CodegenContext(Tuple{i64, i64}) do a, b
+#     # if (Complex(a, b)*Complex(a, b)).re + b > b
+#     #     return b
+#     # end
+#     # return a
+
+#     # currently fails because of bug in phi-node conversion:
+#     if (a>b)
+#         d = a
+#         e = b
+#     else
+#         d = b
+#         e = b
+#     end
+#     return d+e
+# end
+
+# display(cg.ir)
+# display(cg.ir.cfg.index)
+
+# # ir = Brutus.source2source(cg.ir)
+
+# end
+
+# @time Brutus.codegencontext!(cg) do
+#     f = Brutus.source2source(cg.ir)
+#     f(cg.args[2:end]...)
+#     # Brutus.generate_function(cg)
+# end
+
+
