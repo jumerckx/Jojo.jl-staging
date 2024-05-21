@@ -2,7 +2,7 @@
 
 julia_version = "1.11.0-beta1"
 manifest_format = "2.0"
-project_hash = "b0cfec25ef31112ec4ee99c19ea06caa332adceb"
+project_hash = "73be929c37549277cba4f095450a82fdca84166b"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -101,12 +101,16 @@ version = "0.12.1+0"
 
 [[deps.CassetteOverlay]]
 deps = ["Test"]
-path = "/home/jumerckx/.julia/dev/CassetteOverlay"
+git-tree-sha1 = "e4dfe7280d25a9e64946f01259bd1fca7a8cc94b"
+repo-rev = "jojo_fix"
+repo-url = "https://github.com/jumerckx/CassetteOverlay.jl.git"
 uuid = "d78b62d4-37fa-4a6f-acd8-2f19986eb9ee"
-version = "0.1.8"
+version = "0.1.10"
 
 [[deps.CodeInfoTools]]
-path = "/home/jumerckx/.julia/dev/CodeInfoTools"
+git-tree-sha1 = "41e80ff4e8500a3bfef15e7394c7ea655d158a4b"
+repo-rev = "jm/ssaflags"
+repo-url = "https://github.com/jumerckx/CodeInfoTools.jl.git"
 uuid = "bc773b8a-8374-437a-b9f2-0e9785855863"
 version = "0.3.5"
 
@@ -335,7 +339,9 @@ version = "1.11.0"
 
 [[deps.MLIR]]
 deps = ["CEnum", "LLVM", "Libdl", "MLIR_jll"]
-path = "/home/jumerckx/.julia/dev/MLIR"
+git-tree-sha1 = "82ab06ee0cde01af50e36278c27da22ee0a72bb0"
+repo-rev = "jojo"
+repo-url = "https://github.com/jumerckx/MLIR.jl.git"
 uuid = "bfde9dd4-8f40-4a1e-be09-1475335e1c92"
 version = "0.1.0"
 

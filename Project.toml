@@ -15,5 +15,7 @@ MacroTools = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 [compat]
 BenchmarkTools = "1.5.0"
 CUDA = "5.4.0"
+CassetteOverlay = "0.1.8"
 CodeInfoTools = "0.3.5"
+MLIR = "0.1.0"
 MLIR_jll = "16.0.6"
