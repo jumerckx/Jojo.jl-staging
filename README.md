@@ -36,4 +36,36 @@ Platform Info:
   WORD_SIZE: 64
   LLVM: libLLVM-16.0.6 (ORCJIT, skylake)
 ```
+Instantiate the packages in manifest.toml:
+```jl
+] instantiate
+```
+
+This will install forks with small changes that haven't yet been upstreamed for:
+* [CassetteOverlay](https://github.com/jumerckx/CassetteOverlay.jl.git)
+* [CodeInfoTools](https://github.com/jumerckx/CodeInfoTools.jl.git)
+* [MLIR.jl](https://github.com/jumerckx/MLIR.jl.git)
+
 ### MLIR
+
+To run the examples, a path to the MLIR C API library `libMLIR-C.so` needs to be provided.
+This can be done by creating `LocalPreferences.toml` file in the root directory containing:
+```
+[MLIR_jll]
+mlir_c_path = "[LLVM install directory]/lib/libMLIR-C.so"
+```
+
+A sufficiently recent version of LLVM/MLIR might work, but development was done on commit [8a237ab7d9022d24441544ba25be480f0c944f5a](8a237ab7d9022d24441544ba25be480f0c944f5a).
+
+Alternatively, my fork of LLVM includes a few additional commits that work around a build error, as well as support for extracting generated PTX to run with CUDA.jl, and some commits from a stale pull-request that allows lowering WMMA operations for AMD: https://github.com/jumerckx/llvm-project/
+
+LLVM has to be built with the following flags:
+```sh
+LLVM_INSTALL_UTILS=ON
+LLVM_BUILD_LLVM_DYLIB=ON
+LLVM_EXTERNAL_MLIR_SOURCE_DIR=/home/jumerckx/llvm-project/mlir
+LLVM_TARGETS_TO_BUILD=host;NVPTX;AMDGPU # NVPTX and AMDGPU are only needed for NVIDIA and AMD GPUs respectively.
+LLVM_TOOL_MLIR_BUILD=ON
+MLIR_BUILD_MLIR_C_DYLIB=ON
+MLIR_ENABLE_CUDA_RUNNER=ON
+```
