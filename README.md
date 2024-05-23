@@ -24,6 +24,7 @@ Inlining policy changes and Boolean conversions are handled by the MLIRInterpret
 | `gpu_wmma.jl`  |Vendor-neutral WMMA operations.|
 | `gpu_mma_from_linalg.jl` | Example of transforming a `m16n8k16` `linalg.matmul` into hardware-specific NVPTX (`mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16`).|
 | `transform.jl` |Port of the [MLIR transform tutorial](https://mlir.llvm.org/docs/Tutorials/transform/ChH/) that reproduces a Halide schedule.|
+|`src2src_example.jl` | Demonstration of the approach of generating MLIR code by transforming and executing Julia SSA IR. |
 
 
 ## Installation Instructions
@@ -40,7 +41,7 @@ Platform Info:
   WORD_SIZE: 64
   LLVM: libLLVM-16.0.6 (ORCJIT, skylake)
 ```
-Instantiate the packages in manifest.toml:
+Instantiate the packages in `Manifest.toml`:
 ```jl
 ] instantiate
 ```
@@ -61,7 +62,7 @@ mlir_c_path = "[LLVM install directory]/lib/libMLIR-C.so"
 
 A sufficiently recent version of LLVM/MLIR might work, but development was done on commit [8a237ab7d9022d24441544ba25be480f0c944f5a](8a237ab7d9022d24441544ba25be480f0c944f5a).
 
-Alternatively, my fork of LLVM includes a few additional commits that work around a build error, as well as support for extracting generated PTX to run with CUDA.jl, and some commits from a stale pull-request that allows lowering WMMA operations for AMD: https://github.com/jumerckx/llvm-project/
+Alternatively, my fork of LLVM includes a few additional commits that work around a build error, as well as support for extracting generated PTX to run with CUDA.jl, and some commits from a stale pull-request upstream that allows lowering WMMA operations for AMD: https://github.com/jumerckx/llvm-project/
 
 LLVM has to be built with the following flags:
 ```sh

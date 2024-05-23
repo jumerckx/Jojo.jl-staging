@@ -1,3 +1,5 @@
+# partially based on: https://gist.github.com/oxinabox/cdcffc1392f91a2f6d80b2524726d802
+
 const CC = Core.Compiler
 
 function my_goto(label, args)
@@ -110,7 +112,6 @@ function source2source(ir::CC.IRCode)
     )
     # remainder of the blocks:
     for i in ir.cfg.index
-        @warn i ir.cfg.index
         CC.insert_node!(
             ir,
             i,
@@ -139,7 +140,6 @@ function source2source(ir::CC.IRCode)
     end
 
     phi_nodes = collect_phi_nodes(ir)
-    @info phi_nodes
     compact = CC.IncrementalCompact(ir, #=allow_cfg_transforms=# true)
 
     prev_bb = compact.active_bb
@@ -149,7 +149,6 @@ function source2source(ir::CC.IRCode)
     # replace GotoIfNot, GotoNode, PhiNode, ReturnNode with calls to MLIR generation functions.
     for ((original_idx, idx), inst) in compact
         ssa = Core.SSAValue(idx)
-        @info original_idx, idx inst
     
         if inst isa Union{Core.GotoIfNot, Core.GotoNode, Core.PhiNode, Core.ReturnNode}
             if inst isa Core.GotoIfNot
@@ -223,7 +222,6 @@ function source2source(ir::CC.IRCode)
             end
         end
     end
-    @info "compacted IR" compact
 
     # Since ReturnNodes have disappeared, add an explicit `return nothing` at the end.
     CC.insert_node_here!(
