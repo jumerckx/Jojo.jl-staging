@@ -1,2 +1,2 @@
 [MLIR_jll]
-mlir_c_path = "/home/jumerckx/masterthesis/llvm-project/llvm/install/relwithdebinfo/lib/libMLIR-C.so"
+mlir_c_path = "..."
