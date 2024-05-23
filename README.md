@@ -1,4 +1,8 @@
-# Jojo
+- [Overview of the Repository](#overview-of-the-repository)
+  - [Examples](#examples)
+- [Installation Instructions](#installation-instructions)
+  - [Building MLIR](#building-mlir)
+
 
 ## Overview of the Repository
 
@@ -46,7 +50,7 @@ This will install forks with small changes that haven't yet been upstreamed for:
 * [CodeInfoTools](https://github.com/jumerckx/CodeInfoTools.jl.git)
 * [MLIR.jl](https://github.com/jumerckx/MLIR.jl.git)
 
-### MLIR
+### Building MLIR
 
 To run the examples, a path to the MLIR C API library `libMLIR-C.so` needs to be provided.
 This can be done by creating `LocalPreferences.toml` file in the root directory containing:
