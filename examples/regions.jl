@@ -36,4 +36,3 @@ function f(N)
 end
 
 Jojo.generate(f, Tuple{index})
-

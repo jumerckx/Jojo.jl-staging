@@ -65,6 +65,15 @@ mod = IR.Module()
 push!(IR.body(mod), gpu_mod_op)
 IR.attr!(IR.Operation(mod), "gpu.container_module", IR.UnitAttribute())
 
+# # For AMD GPUs:
+# mlir_opt(mod, "gpu.module(convert-gpu-to-amdgpu{chipset=gfx1100 index-bitwidth=32})")
+# mlir_opt(mod, "gpu.module(convert-gpu-to-rocdl{chipset=gfx1100 index-bitwidth=32}),rocdl-attach-target{chip=gfx1100}")
+# mlir_opt(mod, "convert-index-to-llvm{index-bitwidth=32}")
+# mlir_opt(mod, "gpu-to-llvm")
+# mlir_opt(mod, "gpu-module-to-binary") # only works with a ROCm installation
+
+
+# For NVIDIA GPUs:
 mlir_opt(mod, "gpu.module(strip-debuginfo,convert-gpu-to-nvvm),nvvm-attach-target{chip=sm_75 O=3},gpu-to-llvm")
 mlir_opt(mod, "reconcile-unrealized-casts")
 data = API.mlirSerializeGPUModuleOp(gpu_mod_op)

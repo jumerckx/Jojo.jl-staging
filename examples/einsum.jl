@@ -125,6 +125,13 @@ function f(Y, A, B)
 end
 op = Jojo.generate(f, Tuple{tensor{f32, 2}, tensor{f32, 2}, tensor{f32, 2}})
 
+# more complex tensor network.
+# (same example as TensorOperations.jl example in Code Fragment 5.3 of the thesis)
+Jojo.generate(Tuple{tensor{f32, 5}, tensor{f32, 5}, tensor{f32, 4}, tensor{f32, 4}}) do D, A, B, C
+    Einsum(((:a, :b, :c, :d, :e), (:b, :e, :f, :g), (:c, :f, :i, :j))=>(:a, :d, :j, :i, :g))(D, A, B, C)
+end
+
+
 # running simplification gets rid of the executeregion (since there's only one block in the region)
 op = Jojo.simplify(op)
 

@@ -1,6 +1,6 @@
 include("utils.jl")
 
-import MLIR: IR, API
+import MLIR: IR, API, Dialects
 import Jojo
 import Jojo.Library.GPU: GPUFunc, gpu_module
 import Jojo.Library: MLIRMemref, f16
@@ -31,11 +31,11 @@ Jojo.@intrinsic assume_alignment(m::MLIRMemref) = begin
     nothing
 end
 
-const MMAOperand{T, S} = MLIRMemref{T, 2, S, 1, Tuple{16, 1}, 0}
+const T{N, M} = MLIRMemref{f16, 2, Tuple{N, M}, 1, Tuple{N, 1}, 0}
 
 gpu_mod_op = gpu_module([
     IR.attr!(
-        Jojo.generate(Jojo.CodegenContext{GPUFunc}(Tuple{MMAOperand{f16, Tuple{16,16}}, MMAOperand{f16, Tuple{16,8}}, MMAOperand{f16, Tuple{16,8}}}) do a, b, c
+        Jojo.generate(Jojo.CodegenContext{GPUFunc}(Tuple{T{16,16}, T{16,8}, T{16,8}}) do a, b, c
             assume_alignment(a)
             assume_alignment(b)
             assume_alignment(c)
