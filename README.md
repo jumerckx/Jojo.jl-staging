@@ -60,7 +60,7 @@ This can be done by creating `LocalPreferences.toml` file in the root directory 
 mlir_c_path = "[LLVM install directory]/lib/libMLIR-C.so"
 ```
 
-A sufficiently recent version of LLVM/MLIR might work, but development was done on commit [8a237ab7d9022d24441544ba25be480f0c944f5a](8a237ab7d9022d24441544ba25be480f0c944f5a).
+A sufficiently recent version of LLVM/MLIR might work, but development was done on commit [8a237ab7d9022d24441544ba25be480f0c944f5a](https://github.com/llvm/llvm-project/commits/8a237ab7d9022d24441544ba25be480f0c944f5a).
 
 Alternatively, my fork of LLVM includes a few additional commits that work around a build error, as well as support for extracting generated PTX to run with CUDA.jl, and some commits from a stale pull-request upstream that allows lowering WMMA operations for AMD: https://github.com/jumerckx/llvm-project/
 
