@@ -29,7 +29,7 @@ func.func @"#14"(%arg0: i64, %arg1: i64) -> i64 attributes {llvm.emit_c_interfac
 `generate.jl` contains the main MLIR code generation interpreter loop.
 `codegenContext.jl` contains the `AbstractCodegenContext` and default `CodegenContext`.
 
-Inlining policy changes and Boolean conversions are handled by the MLIRInterpreter defined in `abstrat.jl`.
+Inlining policy changes and Boolean conversions are handled by the MLIRInterpreter defined in `abstract.jl`.
 
 `src2src.jl` is an experiment to generate MLIR code by transforming the Julia IR code and executing it, instead manual abstract interpretation over the regular Julia SSA IR.
 
