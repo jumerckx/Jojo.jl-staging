@@ -3,6 +3,26 @@
 - [Installation Instructions](#installation-instructions)
   - [Building MLIR](#building-mlir)
 
+> Generate MLIR from Julia code.
+
+```jl
+Jojo.generate(f, Tuple{i64, i64}) do a,b
+  a>b ? a*b : a+b
+end
+```
+```mlir
+func.func @"#14"(%arg0: i64, %arg1: i64) -> i64 attributes {llvm.emit_c_interface} {
+  %0 = arith.cmpi sgt, %arg0, %arg1 : i64
+  cf.cond_br %0, ^bb1, ^bb2
+^bb1:  // pred: ^bb0
+  %1 = arith.muli %arg0, %arg1 : i64
+  return %1 : i64
+^bb2:  // pred: ^bb0
+  %2 = arith.addi %arg0, %arg1 : i64
+  return %2 : i64
+}
+```
+*(see `/examples/simple.jl` for complete example)*
 
 ## Overview of the Repository
 
