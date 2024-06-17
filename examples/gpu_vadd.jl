@@ -3,7 +3,7 @@ include("utils.jl")
 import MLIR: IR, API
 import Jojo
 using Jojo.Library.GPU: threadIdx, blockIdx, blockDim, GPUFunc, gpu_module
-import Jojo.Library: i64, MLIRMemref
+import Jojo.Library: f32, MLIRMemref
 
 ctx = IR.Context()
 registerAllDialects!();
